@@ -203,7 +203,7 @@
     }
   </script>
   <style>
-    .bg-custom-image {
+    .bg-custom-fitted {
       background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
@@ -211,7 +211,7 @@
     }
   </style>
 </head>
-<body id="appBody" class="text-slate-800 min-h-screen pb-32 select-none transition-all duration-300 bg-custom-image">
+<body id="appBody" class="text-slate-800 min-h-screen pb-32 select-none transition-all duration-300 bg-custom-fitted">
 
   <header class="bg-gradient-to-r from-blue-600/90 to-indigo-600/90 backdrop-blur-md text-white p-4 shadow-md sticky top-0 z-10">
     <div class="max-w-md mx-auto flex justify-between items-center relative">
@@ -219,7 +219,7 @@
         <span>⏱️</span> スクリーンタイム獲得
       </h1>
       <button onclick="openCustomBgModal()" class="text-xs bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded-full transition flex items-center gap-1">
-        🎨 背景変更
+        🎨 このモードの背景変更
       </button>
     </div>
   </header>
@@ -297,13 +297,13 @@
         閉じる
       </button>
     </div>
-  </div>
+  </script>
 
   <!-- 自家用背景設定モーダル -->
   <div id="customBgModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
     <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
       <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2">
-        <span>🎨</span> 自分好みの背景にする
+        <span>🎨</span> <span id="modalModeTitle">現在のモード</span> の背景設定
       </h3>
       
       <div>
@@ -348,8 +348,26 @@
       updateLiveCalculations();
     }, 1000);
 
+    function getUserBgMap() {
+      try {
+        return JSON.parse(localStorage.getItem("user_custom_bg_map") || "{}");
+      } catch(e) {
+        return {};
+      }
+    }
+
     window.openCustomBgModal = function() {
-      const savedBg = JSON.parse(localStorage.getItem("user_custom_bg") || '{"type":"default"}');
+      const currentModeId = window.appState.currentMode || "weekday";
+      const currentMode = (window.appState.modes || []).find(m => m.id === currentModeId);
+      
+      const titleEl = document.getElementById("modalModeTitle");
+      if (titleEl) {
+        titleEl.innerText = currentMode ? `${currentMode.icon || ''} ${currentMode.name}` : "モード";
+      }
+
+      const bgMap = getUserBgMap();
+      const savedBg = bgMap[currentModeId] || { type: "default" };
+
       document.getElementById("userBgType").value = savedBg.type || "default";
       document.getElementById("userBgColor").value = savedBg.color || "#f1f5f9";
       document.getElementById("userBgImage").value = savedBg.image || "";
@@ -388,7 +406,7 @@
         const img = new Image();
         img.onload = function() {
           const canvas = document.createElement("canvas");
-          const maxDimension = 1200;
+          const maxDimension = 1000;
           let width = img.width;
           let height = img.height;
 
@@ -409,7 +427,7 @@
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0, width, height);
 
-          tempBase64Image = canvas.toDataURL("image/jpeg", 0.75);
+          tempBase64Image = canvas.toDataURL("image/jpeg", 0.7);
 
           document.getElementById("filePreviewImg").src = tempBase64Image;
           document.getElementById("filePreview").classList.remove("hidden");
@@ -421,16 +439,20 @@
 
     window.saveUserBgSetting = function() {
       try {
+        const currentModeId = window.appState.currentMode || "weekday";
         const type = document.getElementById("userBgType").value;
         const color = document.getElementById("userBgColor").value;
         const image = document.getElementById("userBgImage").value.trim();
 
-        localStorage.setItem("user_custom_bg", JSON.stringify({ 
-          type, 
-          color, 
-          image, 
-          fileData: tempBase64Image 
-        }));
+        const bgMap = getUserBgMap();
+        bgMap[currentModeId] = {
+          type,
+          color,
+          image,
+          fileData: tempBase64Image
+        };
+
+        localStorage.setItem("user_custom_bg_map", JSON.stringify(bgMap));
 
         closeCustomBgModal();
         applyBodyBackground();
@@ -471,130 +493,5 @@
         pauseBtn.className = "text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold px-2.5 py-1 rounded-full border border-emerald-200 transition";
         pauseNotice.classList.remove("hidden");
         defaultText.classList.add("hidden");
-        displayContainer.classList.add("opacity-50", "animate-pulse");
-      } else {
-        pauseBtn.innerHTML = "⏸️ 一時停止";
-        pauseBtn.className = "text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-2.5 py-1 rounded-full border border-amber-200 transition";
-        pauseNotice.classList.add("hidden");
-        defaultText.classList.remove("hidden");
-        displayContainer.classList.remove("opacity-50", "animate-pulse");
-      }
-    }
-
-    window.openSleepCalcModal = function() {
-      calculateSleepAndRollover();
-      document.getElementById("sleepCalcModal").classList.remove("hidden");
-      document.getElementById("sleepCalcModal").classList.add("flex");
-    };
-
-    window.closeSleepCalcModal = function() {
-      document.getElementById("sleepCalcModal").classList.add("hidden");
-      document.getElementById("sleepCalcModal").classList.remove("flex");
-    };
-
-    function calculateUsedMinutes() {
-      const now = new Date();
-      const baseTimeStr = window.appState.baseTime || "21:30";
-      const parts = baseTimeStr.split(":");
-      const startHour = parseInt(parts[0], 10) || 21;
-      const startMinute = parseInt(parts[1], 10) || 30;
-
-      if (window.appState.isPaused) return 0;
-
-      const isAfterStartTime = now.getHours() > startHour || (now.getHours() === startHour && now.getMinutes() >= startMinute);
-      const isBefore3AM = now.getHours() < 3;
-
-      if (isAfterStartTime || isBefore3AM) {
-        let startTime = new Date(now);
-        if (isBefore3AM) startTime.setDate(startTime.getDate() - 1);
-        startTime.setHours(startHour, startMinute, 0, 0);
-
-        const diffSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
-        return Math.floor(diffSeconds / 60);
-      } else {
-        return 0;
-      }
-    }
-
-    function isItemInMode(item, modeId) {
-      const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
-      if (targets.includes("all") || targets.includes("both")) return true;
-      return targets.includes(modeId);
-    }
-
-    function calculateSleepAndRollover() {
-      let earnedMinutes = 0;
-      const currentMode = window.appState.currentMode || "weekday";
-      (window.appState.items || []).forEach(item => {
-        if (item.completed && isItemInMode(item, currentMode)) {
-          earnedMinutes += parseInt(item.minutes || 0, 10);
-        }
-      });
-
-      const carryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
-      const totalEarned = earnedMinutes + carryOver;
-      const usedMinutes = calculateUsedMinutes();
-      const remainingMinutes = Math.max(0, totalEarned - usedMinutes);
-
-      document.getElementById("sleepRemainingMinutes").innerText = `${remainingMinutes} 分`;
-      document.getElementById("calculatedRolloverVal").innerText = `${remainingMinutes} 分`;
-    }
-
-    function updateLiveCalculations() {
-      let earnedMinutes = 0;
-      const currentMode = window.appState.currentMode || "weekday";
-      (window.appState.items || []).forEach(item => {
-        if (item.completed && isItemInMode(item, currentMode)) {
-          earnedMinutes += parseInt(item.minutes || 0, 10);
-        }
-      });
-
-      const carryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
-      const totalEarned = earnedMinutes + carryOver;
-      const usedMinutes = calculateUsedMinutes();
-      const remainingMinutes = Math.max(0, totalEarned - usedMinutes);
-
-      const totalEl = document.getElementById("totalMinutes");
-      if (totalEl) totalEl.innerText = remainingMinutes;
-
-      const now = new Date();
-      const baseTimeStr = window.appState.baseTime || "21:30";
-      const parts = baseTimeStr.split(":");
-      const startHour = parseInt(parts[0], 10) || 21;
-      const startMinute = parseInt(parts[1], 10) || 30;
-
-      const isAfterStartTime = now.getHours() > startHour || (now.getHours() === startHour && now.getMinutes() >= startMinute);
-      const isBefore3AM = now.getHours() < 3;
-
-      const noticeEl = document.getElementById("beforeStartNotice");
-      const noticeTimeEl = document.getElementById("noticeStartTime");
-
-      if (noticeEl && noticeTimeEl) {
-        noticeTimeEl.innerText = baseTimeStr;
-        if (!isAfterStartTime && !isBefore3AM && !window.appState.isPaused) {
-          noticeEl.classList.remove("hidden");
-        } else {
-          noticeEl.classList.add("hidden");
-        }
-      }
-
-      calculateEndTime(baseTimeStr, remainingMinutes);
-
-      const modal = document.getElementById("sleepCalcModal");
-      if (modal && !modal.classList.contains("hidden")) {
-        calculateSleepAndRollover();
-      }
-    }
-
-    function applyBodyBackground() {
-      const body = document.getElementById("appBody");
-      if (!body) return;
-
-      const userBg = JSON.parse(localStorage.getItem("user_custom_bg") || '{"type":"default"}');
-
-      if (userBg.type === "color" && userBg.color) {
-        body.style.backgroundImage = "none";
-        body.style.backgroundColor = userBg.color;
-        return;
-      } else if (userBg.type === "file" && userBg.fileData) {
-        body.style
+        displayContainer.classList.add
+        
