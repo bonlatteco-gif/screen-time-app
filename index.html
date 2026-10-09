@@ -291,7 +291,7 @@
     </div>
   </div>
 
-  <!-- 自家用背景設定モーダル (スマホ画像アップロード対応) -->
+  <!-- 自家用背景設定モーダル (画像圧縮対応) -->
   <div id="customBgModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
     <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
       <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2">
@@ -377,27 +377,51 @@
 
       const reader = new FileReader();
       reader.onload = function(e) {
-        tempBase64Image = e.target.result;
-        document.getElementById("filePreviewImg").src = tempBase64Image;
-        document.getElementById("filePreview").classList.remove("hidden");
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement("canvas");
+          const maxW = 800;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxW) {
+            height = Math.round((height * maxW) / width);
+            width = maxW;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+
+          tempBase64Image = canvas.toDataURL("image/jpeg", 0.7);
+
+          document.getElementById("filePreviewImg").src = tempBase64Image;
+          document.getElementById("filePreview").classList.remove("hidden");
+        };
+        img.src = e.target.result;
       };
       reader.readAsDataURL(file);
     };
 
     window.saveUserBgSetting = function() {
-      const type = document.getElementById("userBgType").value;
-      const color = document.getElementById("userBgColor").value;
-      const image = document.getElementById("userBgImage").value.trim();
+      try {
+        const type = document.getElementById("userBgType").value;
+        const color = document.getElementById("userBgColor").value;
+        const image = document.getElementById("userBgImage").value.trim();
 
-      localStorage.setItem("user_custom_bg", JSON.stringify({ 
-        type, 
-        color, 
-        image, 
-        fileData: tempBase64Image 
-      }));
+        localStorage.setItem("user_custom_bg", JSON.stringify({ 
+          type, 
+          color, 
+          image, 
+          fileData: tempBase64Image 
+        }));
 
-      closeCustomBgModal();
-      applyBodyBackground();
+        closeCustomBgModal();
+        applyBodyBackground();
+      } catch (e) {
+        alert("画像の容量が大きすぎるため保存できませんでした。別の画像をお試しください。");
+      }
     };
 
     window.setMode = function(modeId) {
