@@ -202,8 +202,16 @@
       loadLocalCache();
     }
   </script>
+  <style>
+    .bg-custom-image {
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+    }
+  </style>
 </head>
-<body id="appBody" class="text-slate-800 min-h-screen pb-32 select-none transition-all duration-300 bg-cover bg-center bg-fixed">
+<body id="appBody" class="text-slate-800 min-h-screen pb-32 select-none transition-all duration-300 bg-custom-image">
 
   <header class="bg-gradient-to-r from-blue-600/90 to-indigo-600/90 backdrop-blur-md text-white p-4 shadow-md sticky top-0 z-10">
     <div class="max-w-md mx-auto flex justify-between items-center relative">
@@ -291,7 +299,7 @@
     </div>
   </div>
 
-  <!-- 自家用背景設定モーダル (画像圧縮対応) -->
+  <!-- 自家用背景設定モーダル -->
   <div id="customBgModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
     <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
       <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2">
@@ -317,7 +325,7 @@
         <label class="block text-xs font-bold text-slate-500 mb-1">スマホの写真アルバムから選択</label>
         <input type="file" id="userBgFileInput" accept="image/*" onchange="handleImageFileSelect(event)" class="w-full border rounded-lg p-2 text-xs">
         <div id="filePreview" class="mt-2 text-center hidden">
-          <img id="filePreviewImg" class="h-20 mx-auto rounded border shadow-sm object-cover">
+          <img id="filePreviewImg" class="h-24 mx-auto rounded border shadow-sm object-cover">
         </div>
       </div>
 
@@ -380,13 +388,20 @@
         const img = new Image();
         img.onload = function() {
           const canvas = document.createElement("canvas");
-          const maxW = 800;
+          const maxDimension = 1200;
           let width = img.width;
           let height = img.height;
 
-          if (width > maxW) {
-            height = Math.round((height * maxW) / width);
-            width = maxW;
+          if (width > height) {
+            if (width > maxDimension) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            }
+          } else {
+            if (height > maxDimension) {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
           }
 
           canvas.width = width;
@@ -394,7 +409,7 @@
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0, width, height);
 
-          tempBase64Image = canvas.toDataURL("image/jpeg", 0.7);
+          tempBase64Image = canvas.toDataURL("image/jpeg", 0.75);
 
           document.getElementById("filePreviewImg").src = tempBase64Image;
           document.getElementById("filePreview").classList.remove("hidden");
@@ -420,7 +435,7 @@
         closeCustomBgModal();
         applyBodyBackground();
       } catch (e) {
-        alert("画像の容量が大きすぎるため保存できませんでした。別の画像をお試しください。");
+        alert("画像のサイズが大きいため保存できませんでした。別の画像を選択してください。");
       }
     };
 
@@ -582,218 +597,4 @@
         body.style.backgroundColor = userBg.color;
         return;
       } else if (userBg.type === "file" && userBg.fileData) {
-        body.style.backgroundImage = `linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.4)), url('${userBg.fileData}')`;
-        body.style.backgroundColor = "";
-        return;
-      } else if (userBg.type === "image" && userBg.image) {
-        body.style.backgroundImage = `linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.4)), url('${userBg.image}')`;
-        body.style.backgroundColor = "";
-        return;
-      }
-
-      const currentModeId = window.appState.currentMode || "weekday";
-      const currentMode = (window.appState.modes || []).find(m => m.id === currentModeId);
-
-      if (currentMode && currentMode.bgType === "image" && currentMode.bgImage) {
-        body.style.backgroundImage = `linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.4)), url('${currentMode.bgImage}')`;
-        body.style.backgroundColor = "";
-      } else {
-        body.style.backgroundImage = "none";
-        body.style.backgroundColor = (currentMode && currentMode.bgColor) ? currentMode.bgColor : "#f1f5f9";
-      }
-    }
-
-    window.renderUI = function() {
-      applyBodyBackground();
-      renderModeTabs();
-
-      const container = document.getElementById("unifiedListContainer");
-      if (!container) return;
-      container.innerHTML = "";
-
-      const currentMode = window.appState.currentMode || "weekday";
-
-      const carryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
-      const carryOverBadge = document.getElementById("carryOverBadge");
-      if (carryOverBadge) {
-        if (carryOver > 0) {
-          carryOverBadge.classList.remove("hidden");
-          const valEl = document.getElementById("carryOverValue");
-          if (valEl) valEl.innerText = carryOver;
-        } else {
-          carryOverBadge.classList.add("hidden");
-        }
-      }
-
-      updatePauseUI();
-      updateLiveCalculations();
-
-      ensureOrderIntegrity();
-
-      (window.appState.order || []).forEach(id => {
-        if (id.startsWith("group_")) {
-          const group = (window.appState.groups || []).find(g => g.id === id);
-          if (group) {
-            const groupCard = createGroupCard(group, currentMode);
-            if (groupCard) container.appendChild(groupCard);
-          }
-        } else {
-          const item = (window.appState.items || []).find(i => i.id === id && !i.groupId);
-          if (item && isItemInMode(item, currentMode)) {
-            container.appendChild(createItemCard(item));
-          }
-        }
-      });
-    };
-
-    function renderModeTabs() {
-      const container = document.getElementById("modeTabsContainer");
-      if (!container) return;
-      container.innerHTML = "";
-
-      const modes = window.appState.modes || [];
-      const currentMode = window.appState.currentMode || "weekday";
-
-      modes.forEach(mode => {
-        const btn = document.createElement("button");
-        const isActive = mode.id === currentMode;
-        btn.onclick = () => setMode(mode.id);
-        btn.className = `flex-1 py-2 px-3 rounded-lg transition-all text-center whitespace-nowrap ${
-          isActive 
-            ? "bg-white text-indigo-700 font-extrabold shadow-sm" 
-            : "text-slate-600 hover:text-slate-900"
-        }`;
-        btn.innerText = `${mode.icon || '📌'} ${mode.name}`;
-        container.appendChild(btn);
-      });
-    }
-
-    function ensureOrderIntegrity() {
-      const validOrder = [];
-
-      (window.appState.order || []).forEach(id => {
-        if (id.startsWith("group_")) {
-          if ((window.appState.groups || []).some(g => g.id === id)) validOrder.push(id);
-        } else {
-          if ((window.appState.items || []).some(i => i.id === id && !i.groupId)) validOrder.push(id);
-        }
-      });
-
-      (window.appState.items || []).forEach(i => {
-        if (!i.groupId && !validOrder.includes(i.id)) {
-          validOrder.push(i.id);
-        }
-      });
-
-      (window.appState.groups || []).forEach(g => {
-        if (!validOrder.includes(g.id)) {
-          validOrder.push(g.id);
-        }
-      });
-
-      window.appState.order = validOrder;
-    }
-
-    function calculateEndTime(baseTimeStr, addMinutes) {
-      if (!baseTimeStr) baseTimeStr = "21:30";
-      const parts = baseTimeStr.split(":");
-      let hours = parseInt(parts[0], 10) || 21;
-      let minutes = parseInt(parts[1], 10) || 30;
-
-      let totalMin = hours * 60 + minutes + addMinutes;
-      let endHours = Math.floor(totalMin / 60) % 24;
-      let endMinutes = totalMin % 60;
-
-      const formattedHours = String(endHours).padStart(2, '0');
-      const formattedMinutes = String(endMinutes).padStart(2, '0');
-
-      const endEl = document.getElementById("calculatedEndTime");
-      if (endEl) endEl.innerText = `（最大 ${formattedHours}:${formattedMinutes} まで）`;
-    }
-
-    function createItemCard(item) {
-      const card = document.createElement("div");
-      card.dataset.id = item.id;
-      
-      card.className = `flex items-center justify-between p-3.5 rounded-xl shadow-sm border transition-all duration-200 ${
-        item.completed 
-          ? 'bg-indigo-50/90 border-indigo-200 ring-1 ring-indigo-300' 
-          : 'bg-white/90 border-slate-200 hover:border-slate-300 backdrop-blur-sm'
-      }`;
-
-      card.innerHTML = `
-        <div class="flex items-center gap-3 flex-1 min-w-0 mr-2 cursor-pointer" onclick="toggleCheck('${item.id}')">
-          <input type="checkbox" ${item.completed ? 'checked' : ''} 
-            class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none flex-shrink-0">
-          
-          <span class="text-sm font-medium text-slate-800 break-words whitespace-normal min-w-0 leading-snug">
-            ${escapeHtml(item.text)}
-          </span>
-        </div>
-
-        <div class="flex items-center gap-2 flex-shrink-0">
-          <span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm">
-            +${item.minutes}分
-          </span>
-        </div>
-      `;
-
-      return card;
-    }
-
-    function createGroupCard(group, mode) {
-      const itemsInGroup = (window.appState.items || []).filter(i => i.groupId === group.id && isItemInMode(i, mode));
-      if (itemsInGroup.length === 0) return null;
-
-      const groupWrapper = document.createElement("div");
-      groupWrapper.className = "bg-slate-200/70 backdrop-blur-sm rounded-2xl p-3 border border-slate-300/70 space-y-2";
-
-      const header = document.createElement("div");
-      header.className = "flex justify-between items-center px-1 text-slate-600 text-xs font-bold";
-      header.innerHTML = `
-        <div class="flex items-center gap-1.5">
-          <span>📌 どれか1つ選択</span>
-        </div>
-      `;
-      groupWrapper.appendChild(header);
-
-      const groupInnerContainer = document.createElement("div");
-      groupInnerContainer.className = "space-y-2";
-
-      itemsInGroup.forEach(item => {
-        groupInnerContainer.appendChild(createItemCard(item));
-      });
-
-      groupWrapper.appendChild(groupInnerContainer);
-      return groupWrapper;
-    }
-
-    function escapeHtml(str) {
-      return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    }
-
-    window.toggleCheck = function(id) {
-      const item = (window.appState.items || []).find(i => i.id === id);
-      if (!item) return;
-
-      const newStatus = !item.completed;
-
-      if (newStatus && item.groupId) {
-        window.appState.items.forEach(i => {
-          if (i.groupId === item.groupId) {
-            i.completed = false;
-          }
-        });
-      }
-
-      item.completed = newStatus;
-      window.renderUI();
-      if (window.saveState) window.saveState();
-    };
-
-    window.addEventListener("DOMContentLoaded", () => {
-      window.renderUI();
-    });
-  </script>
-</body>
-</html>
+        body.style
