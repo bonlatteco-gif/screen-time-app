@@ -210,7 +210,6 @@
       <h1 class="text-xl font-bold flex items-center gap-2">
         <span>⏱️</span> スクリーンタイム獲得
       </h1>
-      <!-- 閲覧者用背景変更ボタン -->
       <button onclick="openCustomBgModal()" class="text-xs bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded-full transition flex items-center gap-1">
         🎨 背景変更
       </button>
@@ -292,7 +291,7 @@
     </div>
   </div>
 
-  <!-- 自家用背景設定モーダル -->
+  <!-- 自家用背景設定モーダル (スマホ画像アップロード対応) -->
   <div id="customBgModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
     <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
       <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2">
@@ -304,13 +303,22 @@
         <select id="userBgType" onchange="toggleUserBgInputs()" class="w-full border rounded-lg p-2 text-sm font-bold">
           <option value="default">🌐 管理者設定（デフォルト）</option>
           <option value="color">🎨 好きな色に変更</option>
-          <option value="image">🖼️ 好きな画像URLに変更</option>
+          <option value="file">📱 スマホの写真・画像を選ぶ</option>
+          <option value="image">🔗 画像URLを指定</option>
         </select>
       </div>
 
       <div id="userBgColorContainer" class="hidden">
         <label class="block text-xs font-bold text-slate-500 mb-1">色を選択</label>
         <input type="color" id="userBgColor" value="#f1f5f9" class="h-10 w-full rounded cursor-pointer border p-1">
+      </div>
+
+      <div id="userBgFileContainer" class="hidden">
+        <label class="block text-xs font-bold text-slate-500 mb-1">スマホの写真アルバムから選択</label>
+        <input type="file" id="userBgFileInput" accept="image/*" onchange="handleImageFileSelect(event)" class="w-full border rounded-lg p-2 text-xs">
+        <div id="filePreview" class="mt-2 text-center hidden">
+          <img id="filePreviewImg" class="h-20 mx-auto rounded border shadow-sm object-cover">
+        </div>
       </div>
 
       <div id="userBgImageContainer" class="hidden">
@@ -326,6 +334,8 @@
   </div>
 
   <script>
+    let tempBase64Image = "";
+
     setInterval(() => {
       updateLiveCalculations();
     }, 1000);
@@ -335,6 +345,15 @@
       document.getElementById("userBgType").value = savedBg.type || "default";
       document.getElementById("userBgColor").value = savedBg.color || "#f1f5f9";
       document.getElementById("userBgImage").value = savedBg.image || "";
+      tempBase64Image = savedBg.fileData || "";
+
+      if (tempBase64Image) {
+        document.getElementById("filePreviewImg").src = tempBase64Image;
+        document.getElementById("filePreview").classList.remove("hidden");
+      } else {
+        document.getElementById("filePreview").classList.add("hidden");
+      }
+
       toggleUserBgInputs();
       document.getElementById("customBgModal").classList.remove("hidden");
       document.getElementById("customBgModal").classList.add("flex");
@@ -348,7 +367,21 @@
     window.toggleUserBgInputs = function() {
       const type = document.getElementById("userBgType").value;
       document.getElementById("userBgColorContainer").classList.toggle("hidden", type !== "color");
+      document.getElementById("userBgFileContainer").classList.toggle("hidden", type !== "file");
       document.getElementById("userBgImageContainer").classList.toggle("hidden", type !== "image");
+    };
+
+    window.handleImageFileSelect = function(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        tempBase64Image = e.target.result;
+        document.getElementById("filePreviewImg").src = tempBase64Image;
+        document.getElementById("filePreview").classList.remove("hidden");
+      };
+      reader.readAsDataURL(file);
     };
 
     window.saveUserBgSetting = function() {
@@ -356,7 +389,13 @@
       const color = document.getElementById("userBgColor").value;
       const image = document.getElementById("userBgImage").value.trim();
 
-      localStorage.setItem("user_custom_bg", JSON.stringify({ type, color, image }));
+      localStorage.setItem("user_custom_bg", JSON.stringify({ 
+        type, 
+        color, 
+        image, 
+        fileData: tempBase64Image 
+      }));
+
       closeCustomBgModal();
       applyBodyBackground();
     };
@@ -517,6 +556,10 @@
       if (userBg.type === "color" && userBg.color) {
         body.style.backgroundImage = "none";
         body.style.backgroundColor = userBg.color;
+        return;
+      } else if (userBg.type === "file" && userBg.fileData) {
+        body.style.backgroundImage = `linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.4)), url('${userBg.fileData}')`;
+        body.style.backgroundColor = "";
         return;
       } else if (userBg.type === "image" && userBg.image) {
         body.style.backgroundImage = `linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.4)), url('${userBg.image}')`;
