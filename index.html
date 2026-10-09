@@ -17,7 +17,6 @@
       setDoc 
     } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    // Firebase設定情報
     const firebaseConfig = {
       apiKey: "AIzaSyBsFBb_dO-v9khjooHKO4qCeAw8VV5F8b4",
       authDomain: "screen-time-add.firebaseapp.com",
@@ -28,42 +27,81 @@
       measurementId: "G-DB6XHSNX3Q"
     };
 
-    // 初期化
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const docRef = doc(db, "screentime", "sharedState");
+    const defaultModes = [
+      { id: "weekday", name: "平日", icon: "📅", bgType: "color", bgColor: "#f1f5f9", bgImage: "" },
+      { id: "holiday", name: "休日・特別", icon: "☀️", bgType: "color", bgColor: "#fef3c7", bgImage: "" }
+    ];
 
-    // グローバル状態
-    window.appState = {
-      items: [],
-      groups: [],
-      order: [],
-      baseTime: "09:30",
+    const todayDay = new Date().getDay();
+    const initialMode = (todayDay === 0 || todayDay === 6) ? "holiday" : "weekday";
+
+    const defaultData = {
+      modes: defaultModes,
+      items: [
+        { id: "item_1", type: "item", text: "宿題を終わらせる", minutes: 30, completed: false, groupId: null, targetModes: ["weekday"] },
+        { id: "item_2", type: "item", text: "部屋の片付け", minutes: 15, completed: false, groupId: null, targetModes: ["all"] },
+        { id: "item_3", type: "item", text: "読書 20分", minutes: 20, completed: false, groupId: "group_1", targetModes: ["all"] },
+        { id: "item_4", type: "item", text: "休日ドリル 2ページ", minutes: 30, completed: false, groupId: null, targetModes: ["holiday"] }
+      ],
+      groups: [
+        { id: "group_1", type: "group", name: "選択グループ 1" }
+      ],
+      order: ["item_1", "item_2", "item_4", "group_1"],
+      baseTime: "21:30",
       carryOverMinutes: 0,
-      lastResetTimestamp: 0
+      isPaused: false,
+      currentMode: initialMode,
+      lastResetTimestamp: new Date().getTime()
     };
+
+    window.appState = {
+      modes: JSON.parse(JSON.stringify(defaultModes)),
+      items: JSON.parse(JSON.stringify(defaultData.items)),
+      groups: JSON.parse(JSON.stringify(defaultData.groups)),
+      order: [...defaultData.order],
+      baseTime: "21:30",
+      carryOverMinutes: 0,
+      lastResetTimestamp: new Date().getTime(),
+      isPaused: false,
+      currentMode: initialMode
+    };
+
+    let db = null;
+    let docRef = null;
+
+    try {
+      const app = initializeApp(firebaseConfig);
+      db = getFirestore(app);
+      docRef = doc(db, "screentime", "sharedState");
+    } catch(e) {
+      console.warn("Firebase初期化スキップ、ローカル動作に切り替えます", e);
+    }
 
     window.saveState = async function() {
       const payload = {
+        modes: window.appState.modes,
         items: window.appState.items,
         groups: window.appState.groups,
         order: window.appState.order,
         baseTime: window.appState.baseTime,
         carryOverMinutes: window.appState.carryOverMinutes,
+        isPaused: !!window.appState.isPaused,
+        currentMode: window.appState.currentMode || "weekday",
         lastResetTimestamp: window.appState.lastResetTimestamp,
         updatedAt: new Date().getTime()
       };
 
       localStorage.setItem("screentime_backup", JSON.stringify(payload));
 
-      try {
-        await setDoc(docRef, payload, { merge: true });
-      } catch (err) {
-        console.error("Firebaseへの保存エラー:", err);
+      if (docRef) {
+        try {
+          await setDoc(docRef, payload, { merge: true });
+        } catch (err) {
+          console.error("Firebaseへの保存エラー:", err);
+        }
       }
     };
 
-    // AM 3:00 自動リセット判定
     function checkAndResetAt3AM() {
       const now = new Date();
       const lastReset = new Date(window.appState.lastResetTimestamp || 0);
@@ -75,6 +113,35 @@
       target3AM.setHours(3, 0, 0, 0);
 
       if (lastReset.getTime() < target3AM.getTime()) {
+        let earnedMinutes = 0;
+        const currentMode = window.appState.currentMode || "weekday";
+        (window.appState.items || []).forEach(item => {
+          if (item.completed && isItemInMode(item, currentMode)) {
+            earnedMinutes += parseInt(item.minutes || 0, 10);
+          }
+        });
+        const currentCarryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
+        const totalEarned = earnedMinutes + currentCarryOver;
+
+        const baseTimeStr = window.appState.baseTime || "21:30";
+        const parts = baseTimeStr.split(":");
+        const startHour = parseInt(parts[0], 10) || 21;
+        const startMinute = parseInt(parts[1], 10) || 30;
+
+        let usedMinutes = 0;
+        if (now.getHours() > startHour || (now.getHours() === startHour && now.getMinutes() >= startMinute) || now.getHours() < 3) {
+          let startTime = new Date(now);
+          if (now.getHours() < 3) {
+            startTime.setDate(startTime.getDate() - 1);
+          }
+          startTime.setHours(startHour, startMinute, 0, 0);
+          usedMinutes = Math.floor((now.getTime() - startTime.getTime()) / (1000 * 60));
+        }
+
+        const remainingMinutes = Math.max(0, totalEarned - usedMinutes);
+
+        window.appState.carryOverMinutes = remainingMinutes;
+
         window.appState.items.forEach(item => {
           item.completed = false;
         });
@@ -83,127 +150,488 @@
       }
     }
 
-    // リアルタイム接続・リスナー
-    onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        window.appState.items = data.items || [];
-        window.appState.groups = data.groups || [];
-        window.appState.order = data.order || [];
-        window.appState.baseTime = data.baseTime || "09:30";
-        window.appState.carryOverMinutes = parseInt(data.carryOverMinutes || 0, 10);
-        window.appState.lastResetTimestamp = data.lastResetTimestamp || new Date().getTime();
-      }
-      
-      checkAndResetAt3AM();
-      window.renderUI();
-    }, (error) => {
-      console.warn("Firestoreリアルタイム接続エラー。ローカルキャッシュを使用します:", error);
+    function isItemInMode(item, modeId) {
+      const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
+      if (targets.includes("all") || targets.includes("both")) return true;
+      return targets.includes(modeId);
+    }
+
+    function loadLocalCache() {
       const local = localStorage.getItem("screentime_backup");
       if (local) {
-        const data = JSON.parse(local);
-        window.appState.items = data.items || [];
-        window.appState.groups = data.groups || [];
-        window.appState.order = data.order || [];
-        window.appState.baseTime = data.baseTime || "09:30";
-        window.appState.carryOverMinutes = parseInt(data.carryOverMinutes || 0, 10);
-        window.appState.lastResetTimestamp = data.lastResetTimestamp || new Date().getTime();
+        try {
+          const data = JSON.parse(local);
+          window.appState.modes = data.modes || defaultModes;
+          window.appState.items = data.items || defaultData.items;
+          window.appState.groups = data.groups || defaultData.groups;
+          window.appState.order = data.order || defaultData.order;
+          window.appState.baseTime = data.baseTime || "21:30";
+          window.appState.carryOverMinutes = parseInt(data.carryOverMinutes || 0, 10);
+          window.appState.isPaused = !!data.isPaused;
+          window.appState.currentMode = data.currentMode || initialMode;
+          window.appState.lastResetTimestamp = data.lastResetTimestamp || new Date().getTime();
+        } catch(e) {}
       }
-      checkAndResetAt3AM();
-      window.renderUI();
-    });
+    }
+
+    if (docRef) {
+      onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          window.appState.modes = data.modes || defaultModes;
+          window.appState.items = data.items || [];
+          window.appState.groups = data.groups || [];
+          window.appState.order = data.order || [];
+          window.appState.baseTime = data.baseTime || "21:30";
+          window.appState.carryOverMinutes = parseInt(data.carryOverMinutes || 0, 10);
+          window.appState.isPaused = !!data.isPaused;
+          window.appState.currentMode = data.currentMode || initialMode;
+          window.appState.lastResetTimestamp = data.lastResetTimestamp || new Date().getTime();
+        } else {
+          window.saveState();
+        }
+        checkAndResetAt3AM();
+        if (window.renderUI) window.renderUI();
+      }, (error) => {
+        console.warn("Firestoreリアルタイム接続エラー。ローカルキャッシュを使用します:", error);
+        loadLocalCache();
+        checkAndResetAt3AM();
+        if (window.renderUI) window.renderUI();
+      });
+    } else {
+      loadLocalCache();
+    }
   </script>
 </head>
+<body id="appBody" class="text-slate-800 min-h-screen pb-32 select-none transition-all duration-300 bg-cover bg-center bg-fixed">
 
-<body class="bg-slate-100 text-slate-800 min-h-screen pb-12 select-none">
-
-  <header class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 shadow-md sticky top-0 z-10">
-    <div class="max-w-md mx-auto flex justify-between items-center">
+  <header class="bg-gradient-to-r from-blue-600/90 to-indigo-600/90 backdrop-blur-md text-white p-4 shadow-md sticky top-0 z-10">
+    <div class="max-w-md mx-auto flex justify-between items-center relative">
       <h1 class="text-xl font-bold flex items-center gap-2">
         <span>⏱️</span> スクリーンタイム獲得
       </h1>
+      <!-- 閲覧者用背景変更ボタン -->
+      <button onclick="openCustomBgModal()" class="text-xs bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded-full transition flex items-center gap-1">
+        🎨 背景変更
+      </button>
     </div>
   </header>
 
-  <main class="max-w-md mx-auto p-4 space-y-6">
+  <main class="max-w-md mx-auto p-4 space-y-4">
+
+    <!-- モード切り替えタブ -->
+    <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
 
     <!-- 獲得時間サマリーカード -->
-    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 text-center">
-      <span class="text-xs font-bold text-slate-400 tracking-wider uppercase">合計獲得スクリーンタイム</span>
-      <div class="flex justify-center items-baseline my-1 flex-wrap gap-x-2">
-        <div>
-          <span id="totalMinutes" class="text-5xl font-extrabold text-indigo-600">0</span>
-          <span class="text-lg font-bold text-slate-600 ml-0.5">分</span>
+    <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative">
+      <div class="flex justify-between items-center mb-1">
+        <span class="text-xs font-bold text-slate-400 tracking-wider uppercase">合計獲得スクリーンタイム</span>
+        <div class="flex gap-1.5">
+          <button id="pauseToggleBtn" onclick="togglePauseTimer()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-2.5 py-1 rounded-full border border-amber-200 transition">
+            ⏸️ 一時停止
+          </button>
+          <button onclick="openSleepCalcModal()" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold px-2.5 py-1 rounded-full border border-indigo-200 transition">
+            🌙 残時間を確認
+          </button>
         </div>
-        <span id="calculatedEndTime" class="text-sm font-semibold text-slate-500">（最大 09:30 まで）</span>
       </div>
-      <p id="carryOverBadge" class="text-xs text-indigo-500 font-medium hidden">
+
+      <div class="flex justify-center items-baseline my-1 flex-wrap gap-x-2">
+        <div id="totalMinutesDisplayContainer" class="transition-opacity">
+          <span id="totalMinutes" class="text-5xl font-extrabold text-indigo-800">0</span>
+          <span class="text-lg font-bold text-slate-700 ml-0.5">分</span>
+        </div>
+        <span id="calculatedEndTime" class="text-sm font-semibold text-slate-500">（最大 21:30 まで）</span>
+      </div>
+      <p id="carryOverBadge" class="text-xs text-indigo-600 font-medium hidden">
         ※前日からの繰り越し時間（<span id="carryOverValue">0</span>分）を含みます
       </p>
-      <p class="text-xs text-slate-400 mt-1">タスクを達成して時間をゲットしよう！</p>
+      <p id="pauseNotice" class="text-xs text-amber-600 font-bold mt-1 hidden">
+        ※タイマー一時停止中（時間の消費が止まっています）
+      </p>
+      <p id="beforeStartNotice" class="text-xs text-indigo-600 font-bold mt-1 hidden">
+        ※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます
+      </p>
+      <p id="defaultSummaryText" class="text-xs text-slate-400 mt-1">タスクを達成して時間をゲットしよう！</p>
     </div>
 
-    <!-- 単一の親コンテナ -->
-    <div id="unifiedListContainer" class="space-y-3">
-      <!-- 項目・グループが動的に挿入されます -->
-    </div>
+    <!-- リスト表示コンテナ -->
+    <div id="unifiedListContainer" class="space-y-3 min-h-[100px]"></div>
 
   </main>
 
-  <script>
-    // --- UIレンダリング ---
-    window.renderUI = function() {
-      const container = document.getElementById("unifiedListContainer");
-      container.innerHTML = "";
+  <!-- 残り時間モーダル -->
+  <div id="sleepCalcModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 border border-indigo-100">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h3 class="font-bold text-indigo-900 text-base flex items-center gap-2">
+          <span>🌙</span> 残り時間・繰り越し確認
+        </h3>
+        <button onclick="closeSleepCalcModal()" class="text-slate-400 hover:text-slate-600 p-1">✕</button>
+      </div>
 
-      // トータル分数計算（達成タスク + 繰り越し）
+      <div class="space-y-3">
+        <div class="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 text-center">
+          <div class="text-xs text-indigo-600 font-bold mb-1">今すぐ寝た場合に残るスクリーンタイム</div>
+          <div id="sleepRemainingMinutes" class="text-4xl font-black text-indigo-800">0 分</div>
+        </div>
+
+        <div class="p-4 bg-amber-50 rounded-2xl border border-amber-200">
+          <div class="text-xs text-amber-800 font-bold mb-1 flex items-center gap-1">
+            <span>✨</span> 明日へそのまま繰り越せる時間
+          </div>
+          <p class="text-xs text-slate-700 leading-relaxed">
+            今すぐスマホをやめて寝ると、明日 <span id="calculatedRolloverVal" class="font-bold text-amber-600 text-sm">0分</span> を貯金してそのまま繰り越せます！
+          </p>
+        </div>
+      </div>
+
+      <button onclick="closeSleepCalcModal()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition">
+        閉じる
+      </button>
+    </div>
+  </div>
+
+  <!-- 自家用背景設定モーダル -->
+  <div id="customBgModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
+      <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2">
+        <span>🎨</span> 自分好みの背景にする
+      </h3>
+      
+      <div>
+        <label class="block text-xs font-bold text-slate-500 mb-1">背景のタイプ</label>
+        <select id="userBgType" onchange="toggleUserBgInputs()" class="w-full border rounded-lg p-2 text-sm font-bold">
+          <option value="default">🌐 管理者設定（デフォルト）</option>
+          <option value="color">🎨 好きな色に変更</option>
+          <option value="image">🖼️ 好きな画像URLに変更</option>
+        </select>
+      </div>
+
+      <div id="userBgColorContainer" class="hidden">
+        <label class="block text-xs font-bold text-slate-500 mb-1">色を選択</label>
+        <input type="color" id="userBgColor" value="#f1f5f9" class="h-10 w-full rounded cursor-pointer border p-1">
+      </div>
+
+      <div id="userBgImageContainer" class="hidden">
+        <label class="block text-xs font-bold text-slate-500 mb-1">画像URL</label>
+        <input type="url" id="userBgImage" placeholder="https://example.com/photo.jpg" class="w-full border rounded-lg p-2 text-sm">
+      </div>
+
+      <div class="flex gap-2 pt-2">
+        <button onclick="closeCustomBgModal()" class="flex-1 bg-slate-200 text-slate-700 text-sm font-bold py-2 rounded-lg">キャンセル</button>
+        <button onclick="saveUserBgSetting()" class="flex-1 bg-indigo-600 text-white text-sm font-bold py-2 rounded-lg">適用する</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    setInterval(() => {
+      updateLiveCalculations();
+    }, 1000);
+
+    window.openCustomBgModal = function() {
+      const savedBg = JSON.parse(localStorage.getItem("user_custom_bg") || '{"type":"default"}');
+      document.getElementById("userBgType").value = savedBg.type || "default";
+      document.getElementById("userBgColor").value = savedBg.color || "#f1f5f9";
+      document.getElementById("userBgImage").value = savedBg.image || "";
+      toggleUserBgInputs();
+      document.getElementById("customBgModal").classList.remove("hidden");
+      document.getElementById("customBgModal").classList.add("flex");
+    };
+
+    window.closeCustomBgModal = function() {
+      document.getElementById("customBgModal").classList.add("hidden");
+      document.getElementById("customBgModal").classList.remove("flex");
+    };
+
+    window.toggleUserBgInputs = function() {
+      const type = document.getElementById("userBgType").value;
+      document.getElementById("userBgColorContainer").classList.toggle("hidden", type !== "color");
+      document.getElementById("userBgImageContainer").classList.toggle("hidden", type !== "image");
+    };
+
+    window.saveUserBgSetting = function() {
+      const type = document.getElementById("userBgType").value;
+      const color = document.getElementById("userBgColor").value;
+      const image = document.getElementById("userBgImage").value.trim();
+
+      localStorage.setItem("user_custom_bg", JSON.stringify({ type, color, image }));
+      closeCustomBgModal();
+      applyBodyBackground();
+    };
+
+    window.setMode = function(modeId) {
+      window.appState.currentMode = modeId;
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    window.togglePauseTimer = function() {
+      const isCurrentlyPaused = !!window.appState.isPaused;
+      const message = isCurrentlyPaused 
+        ? "タイマーの消費を「再開」しますか？" 
+        : "タイマーの消費を「一時停止」しますか？";
+
+      if (confirm(message)) {
+        window.appState.isPaused = !isCurrentlyPaused;
+        if (window.saveState) window.saveState();
+        updatePauseUI();
+      }
+    };
+
+    function updatePauseUI() {
+      const pauseBtn = document.getElementById("pauseToggleBtn");
+      const pauseNotice = document.getElementById("pauseNotice");
+      const defaultText = document.getElementById("defaultSummaryText");
+      const displayContainer = document.getElementById("totalMinutesDisplayContainer");
+
+      if (!pauseBtn || !pauseNotice || !defaultText || !displayContainer) return;
+
+      if (window.appState.isPaused) {
+        pauseBtn.innerHTML = "▶️ 再開";
+        pauseBtn.className = "text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold px-2.5 py-1 rounded-full border border-emerald-200 transition";
+        pauseNotice.classList.remove("hidden");
+        defaultText.classList.add("hidden");
+        displayContainer.classList.add("opacity-50", "animate-pulse");
+      } else {
+        pauseBtn.innerHTML = "⏸️ 一時停止";
+        pauseBtn.className = "text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-2.5 py-1 rounded-full border border-amber-200 transition";
+        pauseNotice.classList.add("hidden");
+        defaultText.classList.remove("hidden");
+        displayContainer.classList.remove("opacity-50", "animate-pulse");
+      }
+    }
+
+    window.openSleepCalcModal = function() {
+      calculateSleepAndRollover();
+      document.getElementById("sleepCalcModal").classList.remove("hidden");
+      document.getElementById("sleepCalcModal").classList.add("flex");
+    };
+
+    window.closeSleepCalcModal = function() {
+      document.getElementById("sleepCalcModal").classList.add("hidden");
+      document.getElementById("sleepCalcModal").classList.remove("flex");
+    };
+
+    function calculateUsedMinutes() {
+      const now = new Date();
+      const baseTimeStr = window.appState.baseTime || "21:30";
+      const parts = baseTimeStr.split(":");
+      const startHour = parseInt(parts[0], 10) || 21;
+      const startMinute = parseInt(parts[1], 10) || 30;
+
+      if (window.appState.isPaused) return 0;
+
+      const isAfterStartTime = now.getHours() > startHour || (now.getHours() === startHour && now.getMinutes() >= startMinute);
+      const isBefore3AM = now.getHours() < 3;
+
+      if (isAfterStartTime || isBefore3AM) {
+        let startTime = new Date(now);
+        if (isBefore3AM) startTime.setDate(startTime.getDate() - 1);
+        startTime.setHours(startHour, startMinute, 0, 0);
+
+        const diffSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+        return Math.floor(diffSeconds / 60);
+      } else {
+        return 0;
+      }
+    }
+
+    function isItemInMode(item, modeId) {
+      const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
+      if (targets.includes("all") || targets.includes("both")) return true;
+      return targets.includes(modeId);
+    }
+
+    function calculateSleepAndRollover() {
       let earnedMinutes = 0;
-      window.appState.items.forEach(item => {
-        if (item.completed) {
+      const currentMode = window.appState.currentMode || "weekday";
+      (window.appState.items || []).forEach(item => {
+        if (item.completed && isItemInMode(item, currentMode)) {
           earnedMinutes += parseInt(item.minutes || 0, 10);
         }
       });
 
       const carryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
-      const total = earnedMinutes + carryOver;
+      const totalEarned = earnedMinutes + carryOver;
+      const usedMinutes = calculateUsedMinutes();
+      const remainingMinutes = Math.max(0, totalEarned - usedMinutes);
 
-      document.getElementById("totalMinutes").innerText = total;
+      document.getElementById("sleepRemainingMinutes").innerText = `${remainingMinutes} 分`;
+      document.getElementById("calculatedRolloverVal").innerText = `${remainingMinutes} 分`;
+    }
 
-      // 繰り越しバッジ切り替え
-      const carryOverBadge = document.getElementById("carryOverBadge");
-      if (carryOver > 0) {
-        carryOverBadge.classList.remove("hidden");
-        document.getElementById("carryOverValue").innerText = carryOver;
-      } else {
-        carryOverBadge.classList.add("hidden");
+    function updateLiveCalculations() {
+      let earnedMinutes = 0;
+      const currentMode = window.appState.currentMode || "weekday";
+      (window.appState.items || []).forEach(item => {
+        if (item.completed && isItemInMode(item, currentMode)) {
+          earnedMinutes += parseInt(item.minutes || 0, 10);
+        }
+      });
+
+      const carryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
+      const totalEarned = earnedMinutes + carryOver;
+      const usedMinutes = calculateUsedMinutes();
+      const remainingMinutes = Math.max(0, totalEarned - usedMinutes);
+
+      const totalEl = document.getElementById("totalMinutes");
+      if (totalEl) totalEl.innerText = remainingMinutes;
+
+      const now = new Date();
+      const baseTimeStr = window.appState.baseTime || "21:30";
+      const parts = baseTimeStr.split(":");
+      const startHour = parseInt(parts[0], 10) || 21;
+      const startMinute = parseInt(parts[1], 10) || 30;
+
+      const isAfterStartTime = now.getHours() > startHour || (now.getHours() === startHour && now.getMinutes() >= startMinute);
+      const isBefore3AM = now.getHours() < 3;
+
+      const noticeEl = document.getElementById("beforeStartNotice");
+      const noticeTimeEl = document.getElementById("noticeStartTime");
+
+      if (noticeEl && noticeTimeEl) {
+        noticeTimeEl.innerText = baseTimeStr;
+        if (!isAfterStartTime && !isBefore3AM && !window.appState.isPaused) {
+          noticeEl.classList.remove("hidden");
+        } else {
+          noticeEl.classList.add("hidden");
+        }
       }
 
-      // 終了時間計算
-      calculateEndTime(window.appState.baseTime || "09:30", total);
+      calculateEndTime(baseTimeStr, remainingMinutes);
 
-      // リスト描画（order配列の順番で描画）
+      const modal = document.getElementById("sleepCalcModal");
+      if (modal && !modal.classList.contains("hidden")) {
+        calculateSleepAndRollover();
+      }
+    }
+
+    function applyBodyBackground() {
+      const body = document.getElementById("appBody");
+      if (!body) return;
+
+      const userBg = JSON.parse(localStorage.getItem("user_custom_bg") || '{"type":"default"}');
+
+      if (userBg.type === "color" && userBg.color) {
+        body.style.backgroundImage = "none";
+        body.style.backgroundColor = userBg.color;
+        return;
+      } else if (userBg.type === "image" && userBg.image) {
+        body.style.backgroundImage = `linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.4)), url('${userBg.image}')`;
+        body.style.backgroundColor = "";
+        return;
+      }
+
+      const currentModeId = window.appState.currentMode || "weekday";
+      const currentMode = (window.appState.modes || []).find(m => m.id === currentModeId);
+
+      if (currentMode && currentMode.bgType === "image" && currentMode.bgImage) {
+        body.style.backgroundImage = `linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.4)), url('${currentMode.bgImage}')`;
+        body.style.backgroundColor = "";
+      } else {
+        body.style.backgroundImage = "none";
+        body.style.backgroundColor = (currentMode && currentMode.bgColor) ? currentMode.bgColor : "#f1f5f9";
+      }
+    }
+
+    window.renderUI = function() {
+      applyBodyBackground();
+      renderModeTabs();
+
+      const container = document.getElementById("unifiedListContainer");
+      if (!container) return;
+      container.innerHTML = "";
+
+      const currentMode = window.appState.currentMode || "weekday";
+
+      const carryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
+      const carryOverBadge = document.getElementById("carryOverBadge");
+      if (carryOverBadge) {
+        if (carryOver > 0) {
+          carryOverBadge.classList.remove("hidden");
+          const valEl = document.getElementById("carryOverValue");
+          if (valEl) valEl.innerText = carryOver;
+        } else {
+          carryOverBadge.classList.add("hidden");
+        }
+      }
+
+      updatePauseUI();
+      updateLiveCalculations();
+
+      ensureOrderIntegrity();
+
       (window.appState.order || []).forEach(id => {
         if (id.startsWith("group_")) {
-          const group = window.appState.groups.find(g => g.id === id);
+          const group = (window.appState.groups || []).find(g => g.id === id);
           if (group) {
-            const groupCard = createGroupCard(group);
+            const groupCard = createGroupCard(group, currentMode);
             if (groupCard) container.appendChild(groupCard);
           }
         } else {
-          const item = window.appState.items.find(i => i.id === id && !i.groupId);
-          if (item) {
+          const item = (window.appState.items || []).find(i => i.id === id && !i.groupId);
+          if (item && isItemInMode(item, currentMode)) {
             container.appendChild(createItemCard(item));
           }
         }
       });
     };
 
-    // 終了時刻計算
+    function renderModeTabs() {
+      const container = document.getElementById("modeTabsContainer");
+      if (!container) return;
+      container.innerHTML = "";
+
+      const modes = window.appState.modes || [];
+      const currentMode = window.appState.currentMode || "weekday";
+
+      modes.forEach(mode => {
+        const btn = document.createElement("button");
+        const isActive = mode.id === currentMode;
+        btn.onclick = () => setMode(mode.id);
+        btn.className = `flex-1 py-2 px-3 rounded-lg transition-all text-center whitespace-nowrap ${
+          isActive 
+            ? "bg-white text-indigo-700 font-extrabold shadow-sm" 
+            : "text-slate-600 hover:text-slate-900"
+        }`;
+        btn.innerText = `${mode.icon || '📌'} ${mode.name}`;
+        container.appendChild(btn);
+      });
+    }
+
+    function ensureOrderIntegrity() {
+      const validOrder = [];
+
+      (window.appState.order || []).forEach(id => {
+        if (id.startsWith("group_")) {
+          if ((window.appState.groups || []).some(g => g.id === id)) validOrder.push(id);
+        } else {
+          if ((window.appState.items || []).some(i => i.id === id && !i.groupId)) validOrder.push(id);
+        }
+      });
+
+      (window.appState.items || []).forEach(i => {
+        if (!i.groupId && !validOrder.includes(i.id)) {
+          validOrder.push(i.id);
+        }
+      });
+
+      (window.appState.groups || []).forEach(g => {
+        if (!validOrder.includes(g.id)) {
+          validOrder.push(g.id);
+        }
+      });
+
+      window.appState.order = validOrder;
+    }
+
     function calculateEndTime(baseTimeStr, addMinutes) {
-      if (!baseTimeStr) baseTimeStr = "09:30";
+      if (!baseTimeStr) baseTimeStr = "21:30";
       const parts = baseTimeStr.split(":");
-      let hours = parseInt(parts[0], 10) || 0;
-      let minutes = parseInt(parts[1], 10) || 0;
+      let hours = parseInt(parts[0], 10) || 21;
+      let minutes = parseInt(parts[1], 10) || 30;
 
       let totalMin = hours * 60 + minutes + addMinutes;
       let endHours = Math.floor(totalMin / 60) % 24;
@@ -212,18 +640,18 @@
       const formattedHours = String(endHours).padStart(2, '0');
       const formattedMinutes = String(endMinutes).padStart(2, '0');
 
-      document.getElementById("calculatedEndTime").innerText = `（最大 ${formattedHours}:${formattedMinutes} まで）`;
+      const endEl = document.getElementById("calculatedEndTime");
+      if (endEl) endEl.innerText = `（最大 ${formattedHours}:${formattedMinutes} まで）`;
     }
 
-    // 単一タスクカード生成
     function createItemCard(item) {
       const card = document.createElement("div");
       card.dataset.id = item.id;
       
       card.className = `flex items-center justify-between p-3.5 rounded-xl shadow-sm border transition-all duration-200 ${
         item.completed 
-          ? 'bg-indigo-50/80 border-indigo-200 ring-1 ring-indigo-300' 
-          : 'bg-white border-slate-200 hover:border-slate-300'
+          ? 'bg-indigo-50/90 border-indigo-200 ring-1 ring-indigo-300' 
+          : 'bg-white/90 border-slate-200 hover:border-slate-300 backdrop-blur-sm'
       }`;
 
       card.innerHTML = `
@@ -246,13 +674,12 @@
       return card;
     }
 
-    // グループカード生成
-    function createGroupCard(group) {
-      const itemsInGroup = window.appState.items.filter(i => i.groupId === group.id);
+    function createGroupCard(group, mode) {
+      const itemsInGroup = (window.appState.items || []).filter(i => i.groupId === group.id && isItemInMode(i, mode));
       if (itemsInGroup.length === 0) return null;
 
       const groupWrapper = document.createElement("div");
-      groupWrapper.className = "bg-slate-200/60 rounded-2xl p-3 border border-slate-300/70 space-y-2";
+      groupWrapper.className = "bg-slate-200/70 backdrop-blur-sm rounded-2xl p-3 border border-slate-300/70 space-y-2";
 
       const header = document.createElement("div");
       header.className = "flex justify-between items-center px-1 text-slate-600 text-xs font-bold";
@@ -278,9 +705,8 @@
       return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
-    // チェックボックス切り替え (選択グループ内排他制御)
     window.toggleCheck = function(id) {
-      const item = window.appState.items.find(i => i.id === id);
+      const item = (window.appState.items || []).find(i => i.id === id);
       if (!item) return;
 
       const newStatus = !item.completed;
@@ -295,8 +721,12 @@
 
       item.completed = newStatus;
       window.renderUI();
-      window.saveState();
+      if (window.saveState) window.saveState();
     };
+
+    window.addEventListener("DOMContentLoaded", () => {
+      window.renderUI();
+    });
   </script>
 </body>
 </html>
