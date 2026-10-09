@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>スクリーンタイム獲得</title>
+  <title>スクリーンタイム獲得 (管理者)</title>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- SortableJS (ドラッグ＆ドロップ並び替え) -->
+  <!-- SortableJS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 
   <script type="module">
@@ -19,7 +19,6 @@
       setDoc 
     } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    // Firebase設定情報
     const firebaseConfig = {
       apiKey: "AIzaSyBsFBb_dO-v9khjooHKO4qCeAw8VV5F8b4",
       authDomain: "screen-time-add.firebaseapp.com",
@@ -30,70 +29,96 @@
       measurementId: "G-DB6XHSNX3Q"
     };
 
-    // 初期化
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const docRef = doc(db, "screentime", "sharedState");
+    const defaultModes = [
+      { id: "weekday", name: "平日", icon: "📅", bgType: "color", bgColor: "#f1f5f9", bgImage: "" },
+      { id: "holiday", name: "休日・特別", icon: "☀️", bgType: "color", bgColor: "#fef3c7", bgImage: "" }
+    ];
 
-    // デフォルトデータ構造
+    const todayDay = new Date().getDay();
+    const initialMode = (todayDay === 0 || todayDay === 6) ? "holiday" : "weekday";
+
     const defaultData = {
+      modes: defaultModes,
       items: [
-        { id: "item_1", type: "item", text: "宿題を終わらせる", minutes: 30, completed: false, groupId: null },
-        { id: "item_2", type: "item", text: "部屋の片付け", minutes: 15, completed: false, groupId: null },
-        { id: "item_3", type: "item", text: "読書 20分", minutes: 20, completed: false, groupId: "group_1" },
-        { id: "item_4", type: "item", text: "漢字ドリル 2ページ", minutes: 20, completed: false, groupId: "group_1" }
+        { id: "item_1", type: "item", text: "宿題を終わらせる", minutes: 30, completed: false, groupId: null, targetModes: ["weekday"] },
+        { id: "item_2", type: "item", text: "部屋の片付け", minutes: 15, completed: false, groupId: null, targetModes: ["all"] },
+        { id: "item_3", type: "item", text: "読書 20分", minutes: 20, completed: false, groupId: "group_1", targetModes: ["all"] },
+        { id: "item_4", type: "item", text: "休日ドリル 2ページ", minutes: 30, completed: false, groupId: null, targetModes: ["holiday"] }
       ],
       groups: [
         { id: "group_1", type: "group", name: "選択グループ 1" }
       ],
-      // 全体の表示順序を維持する配列（'item_1', 'group_1', 'item_2' など）
-      order: ["item_1", "item_2", "group_1"],
+      order: ["item_1", "item_2", "item_4", "group_1"],
       adminPassword: "あさらま",
-      baseTime: "09:30",
+      baseTime: "21:30",
       carryOverMinutes: 0,
+      isPaused: false,
+      currentMode: initialMode,
       lastResetTimestamp: new Date().getTime()
     };
 
-    // グローバル状態
     window.appState = {
-      items: [],
-      groups: [],
-      order: [],
+      modes: JSON.parse(JSON.stringify(defaultModes)),
+      items: JSON.parse(JSON.stringify(defaultData.items)),
+      groups: JSON.parse(JSON.stringify(defaultData.groups)),
+      order: [...defaultData.order],
       adminPassword: "あさらま",
-      baseTime: "09:30",
+      baseTime: "21:30",
       carryOverMinutes: 0,
-      lastResetTimestamp: 0,
-      isAdmin: false
+      lastResetTimestamp: new Date().getTime(),
+      isAdmin: false,
+      isPaused: false,
+      currentMode: initialMode
     };
+
+    let db = null;
+    let docRef = null;
+
+    try {
+      const app = initializeApp(firebaseConfig);
+      db = getFirestore(app);
+      docRef = doc(db, "screentime", "sharedState");
+    } catch(e) {
+      console.warn("Firebase初期化スキップ、ローカル動作に切り替えます", e);
+    }
 
     window.saveState = async function() {
       const payload = {
+        modes: window.appState.modes,
         items: window.appState.items,
         groups: window.appState.groups,
         order: window.appState.order,
         adminPassword: window.appState.adminPassword,
         baseTime: window.appState.baseTime,
         carryOverMinutes: window.appState.carryOverMinutes,
+        isPaused: !!window.appState.isPaused,
+        currentMode: window.appState.currentMode || "weekday",
         lastResetTimestamp: window.appState.lastResetTimestamp,
         updatedAt: new Date().getTime()
       };
 
-      // ローカルストレージにバックアップ
       localStorage.setItem("screentime_backup", JSON.stringify(payload));
 
-      try {
-        await setDoc(docRef, payload);
-      } catch (err) {
-        console.error("Firebaseへの保存エラー:", err);
+      if (docRef) {
+        try {
+          await setDoc(docRef, payload);
+        } catch (err) {
+          console.error("Firebaseへの保存エラー:", err);
+        }
       }
     };
 
-    // AM 3:00 自動リセット判定
+    function isItemInMode(item, modeId) {
+      if (window.appState.isAdmin) return true;
+      const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
+      if (targets.includes("all") || targets.includes("both")) return true;
+      return targets.includes(modeId);
+    }
+
     function checkAndResetAt3AM() {
       const now = new Date();
       const lastReset = new Date(window.appState.lastResetTimestamp || 0);
 
-      // 前回の「午前3時」の境界日時を算出
       const target3AM = new Date(now);
       if (now.getHours() < 3) {
         target3AM.setDate(target3AM.getDate() - 1);
@@ -101,6 +126,35 @@
       target3AM.setHours(3, 0, 0, 0);
 
       if (lastReset.getTime() < target3AM.getTime()) {
+        let earnedMinutes = 0;
+        const currentMode = window.appState.currentMode || "weekday";
+        (window.appState.items || []).forEach(item => {
+          if (item.completed && isItemInMode(item, currentMode)) {
+            earnedMinutes += parseInt(item.minutes || 0, 10);
+          }
+        });
+        const currentCarryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
+        const totalEarned = earnedMinutes + currentCarryOver;
+
+        const baseTimeStr = window.appState.baseTime || "21:30";
+        const parts = baseTimeStr.split(":");
+        const startHour = parseInt(parts[0], 10) || 21;
+        const startMinute = parseInt(parts[1], 10) || 30;
+
+        let usedMinutes = 0;
+        if (now.getHours() > startHour || (now.getHours() === startHour && now.getMinutes() >= startMinute) || now.getHours() < 3) {
+          let startTime = new Date(now);
+          if (now.getHours() < 3) {
+            startTime.setDate(startTime.getDate() - 1);
+          }
+          startTime.setHours(startHour, startMinute, 0, 0);
+          usedMinutes = Math.floor((now.getTime() - startTime.getTime()) / (1000 * 60));
+        }
+
+        const remainingMinutes = Math.max(0, totalEarned - usedMinutes);
+
+        window.appState.carryOverMinutes = remainingMinutes;
+
         window.appState.items.forEach(item => {
           item.completed = false;
         });
@@ -109,85 +163,121 @@
       }
     }
 
-    // リアルタイム接続・リスナー
-    onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        window.appState.items = data.items || [];
-        window.appState.groups = data.groups || [];
-        window.appState.order = data.order || [];
-        window.appState.adminPassword = data.adminPassword || "あさらま";
-        window.appState.baseTime = data.baseTime || "09:30";
-        window.appState.carryOverMinutes = parseInt(data.carryOverMinutes || 0, 10);
-        window.appState.lastResetTimestamp = data.lastResetTimestamp || new Date().getTime();
-      } else {
-        window.appState.items = defaultData.items;
-        window.appState.groups = defaultData.groups;
-        window.appState.order = defaultData.order;
-        window.appState.adminPassword = defaultData.adminPassword;
-        window.appState.baseTime = defaultData.baseTime;
-        window.appState.carryOverMinutes = defaultData.carryOverMinutes;
-        window.appState.lastResetTimestamp = defaultData.lastResetTimestamp;
-        window.saveState();
-      }
-      
-      checkAndResetAt3AM();
-      window.renderUI();
-    }, (error) => {
-      console.warn("Firestoreリアルタイム接続エラー。ローカルキャッシュを使用します:", error);
+    function loadLocalCache() {
       const local = localStorage.getItem("screentime_backup");
       if (local) {
-        const data = JSON.parse(local);
-        window.appState.items = data.items || [];
-        window.appState.groups = data.groups || [];
-        window.appState.order = data.order || [];
-        window.appState.adminPassword = data.adminPassword || "あさらま";
-        window.appState.baseTime = data.baseTime || "09:30";
-        window.appState.carryOverMinutes = parseInt(data.carryOverMinutes || 0, 10);
-        window.appState.lastResetTimestamp = data.lastResetTimestamp || new Date().getTime();
-      } else {
-        window.appState.items = defaultData.items;
-        window.appState.groups = defaultData.groups;
-        window.appState.order = defaultData.order;
+        try {
+          const data = JSON.parse(local);
+          window.appState.modes = data.modes || defaultModes;
+          window.appState.items = data.items || defaultData.items;
+          window.appState.groups = data.groups || defaultData.groups;
+          window.appState.order = data.order || defaultData.order;
+          window.appState.adminPassword = data.adminPassword || "あさらま";
+          window.appState.baseTime = data.baseTime || "21:30";
+          window.appState.carryOverMinutes = parseInt(data.carryOverMinutes || 0, 10);
+          window.appState.isPaused = !!data.isPaused;
+          window.appState.currentMode = data.currentMode || initialMode;
+          window.appState.lastResetTimestamp = data.lastResetTimestamp || new Date().getTime();
+        } catch(e) {}
       }
-      checkAndResetAt3AM();
-      window.renderUI();
-    });
-  </script>
-</head>
-<body class="bg-slate-100 text-slate-800 min-h-screen pb-12 select-none">
+    }
 
-  <header class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 shadow-md sticky top-0 z-10">
+    if (docRef) {
+      onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          window.appState.modes = data.modes || defaultModes;
+          window.appState.items = data.items || [];
+          window.appState.groups = data.groups || [];
+          window.appState.order = data.order || [];
+          window.appState.adminPassword = data.adminPassword || "あさらま";
+          window.appState.baseTime = data.baseTime || "21:30";
+          window.appState.carryOverMinutes = parseInt(data.carryOverMinutes || 0, 10);
+          window.appState.isPaused = !!data.isPaused;
+          window.appState.currentMode = data.currentMode || initialMode;
+          window.appState.lastResetTimestamp = data.lastResetTimestamp || new Date().getTime();
+        } else {
+          window.saveState();
+        }
+        checkAndResetAt3AM();
+        if (window.renderUI) window.renderUI();
+      }, (error) => {
+        console.warn("Firestoreリアルタイム接続エラー。ローカルキャッシュを使用します:", error);
+        loadLocalCache();
+        checkAndResetAt3AM();
+        if (window.renderUI) window.renderUI();
+      });
+    } else {
+      loadLocalCache();
+    }
+  </script>
+  <style>
+    .bg-custom-fitted {
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+    }
+  </style>
+</head>
+<body id="appBody" class="text-slate-800 min-h-screen pb-32 select-none transition-all duration-300 bg-custom-fitted">
+
+  <header class="bg-gradient-to-r from-blue-600/90 to-indigo-600/90 backdrop-blur-md text-white p-4 shadow-md sticky top-0 z-10">
     <div class="max-w-md mx-auto flex justify-between items-center">
       <h1 class="text-xl font-bold flex items-center gap-2">
         <span>⏱️</span> スクリーンタイム獲得
       </h1>
-      <button id="adminToggleBtn" onclick="toggleAdminMode()" class="text-xs bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-full transition">
-        管理者モード
-      </button>
+      <div class="flex items-center gap-2">
+        <button onclick="openCustomBgModal()" class="text-xs bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-full transition">
+          🎨 背景変更
+        </button>
+        <button id="adminToggleBtn" onclick="toggleAdminMode()" class="text-xs bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-full transition">
+          管理者モード
+        </button>
+      </div>
     </div>
   </header>
 
-  <main class="max-w-md mx-auto p-4 space-y-6">
+  <main class="max-w-md mx-auto p-4 space-y-4">
+
+    <!-- モード切り替えタブ -->
+    <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
 
     <!-- 獲得時間サマリーカード -->
-    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 text-center">
-      <span class="text-xs font-bold text-slate-400 tracking-wider uppercase">合計獲得スクリーンタイム</span>
-      <div class="flex justify-center items-baseline my-1 flex-wrap gap-x-2">
-        <div>
-          <span id="totalMinutes" class="text-5xl font-extrabold text-indigo-600">0</span>
-          <span class="text-lg font-bold text-slate-600 ml-0.5">分</span>
+    <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative">
+      <div class="flex justify-between items-center mb-1">
+        <span class="text-xs font-bold text-slate-400 tracking-wider uppercase">合計獲得スクリーンタイム</span>
+        <div class="flex gap-1.5">
+          <button id="pauseToggleBtn" onclick="togglePauseTimer()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-2.5 py-1 rounded-full border border-amber-200 transition">
+            ⏸️ 一時停止
+          </button>
+          <button onclick="openSleepCalcModal()" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold px-2.5 py-1 rounded-full border border-indigo-200 transition">
+            🌙 残時間を確認
+          </button>
         </div>
-        <!-- 終了予定時刻表示 -->
-        <span id="calculatedEndTime" class="text-sm font-semibold text-slate-500">（最大 09:30 まで）</span>
       </div>
-      <p id="carryOverBadge" class="text-xs text-indigo-500 font-medium hidden">
+
+      <div class="flex justify-center items-baseline my-1 flex-wrap gap-x-2">
+        <div id="totalMinutesDisplayContainer" class="transition-opacity">
+          <span id="totalMinutes" class="text-5xl font-extrabold text-indigo-800">0</span>
+          <span class="text-lg font-bold text-slate-700 ml-0.5">分</span>
+        </div>
+        <span id="calculatedEndTime" class="text-sm font-semibold text-slate-500">（最大 21:30 まで）</span>
+      </div>
+      <p id="carryOverBadge" class="text-xs text-indigo-600 font-medium hidden">
         ※前日からの繰り越し時間（<span id="carryOverValue">0</span>分）を含みます
       </p>
-      <p class="text-xs text-slate-400 mt-1">タスクを達成して時間をゲットしよう！</p>
+      <p id="pauseNotice" class="text-xs text-amber-600 font-bold mt-1 hidden">
+        ※タイマー一時停止中（時間の消費が止まっています）
+      </p>
+      <p id="beforeStartNotice" class="text-xs text-indigo-600 font-bold mt-1 hidden">
+        ※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます
+      </p>
+      <p id="defaultSummaryText" class="text-xs text-slate-400 mt-1">タスクを達成して時間をゲットしよう！</p>
     </div>
 
-    <div id="adminPanel" class="hidden bg-slate-800 text-white rounded-2xl p-4 shadow-lg space-y-4">
+    <!-- 管理者パネル -->
+    <div id="adminPanel" class="hidden bg-slate-800/90 backdrop-blur-md text-white rounded-2xl p-4 shadow-lg space-y-4">
       <div class="flex justify-between items-center border-b border-slate-700 pb-2">
         <h2 class="text-sm font-bold flex items-center gap-1.5 text-amber-400">
           ⚙️ 管理者設定
@@ -195,17 +285,28 @@
         <span class="text-xs bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded">編集可</span>
       </div>
 
+      <!-- モード設定セクション -->
+      <div class="bg-slate-700/60 p-3 rounded-xl space-y-3">
+        <div class="flex justify-between items-center">
+          <h3 class="text-xs font-bold text-amber-300">📁 モード管理（夏休み・冬休み等）</h3>
+          <button onclick="addCustomMode()" class="text-[11px] bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold px-2 py-1 rounded">
+            ＋ 新規モード追加
+          </button>
+        </div>
+        <div id="adminModeList" class="space-y-1.5"></div>
+      </div>
+
       <!-- 基本時間 & 繰り越し時間 設定 -->
       <div class="bg-slate-700/60 p-3 rounded-xl space-y-3">
-        <h3 class="text-xs font-bold text-amber-300">⏱️ 時間設定</h3>
-        <div class="grid grid-cols-2 gap-2">
+        <h3 class="text-xs font-bold text-amber-300">⏱️ 時間・繰り越し設定</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
-            <label class="block text-xs text-slate-300 mb-1">基本終了時間</label>
-            <input type="time" id="baseTimeInput" onchange="updateBaseTime(this.value)" class="w-full text-slate-900 text-sm px-3 py-1.5 rounded-lg focus:outline-none font-bold">
+            <label class="block text-xs text-slate-300 mb-1">基本終了（カウント開始）時間</label>
+            <input type="time" id="baseTimeInput" onchange="updateBaseTime(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
           </div>
           <div>
-            <label class="block text-xs text-slate-300 mb-1">繰り越し（分）</label>
-            <input type="number" id="carryOverInput" min="0" placeholder="0" onchange="updateCarryOver(this.value)" class="w-full text-slate-900 text-sm px-3 py-1.5 rounded-lg focus:outline-none font-bold">
+            <label class="block text-xs text-slate-300 mb-1">現在の繰り越し(分)</label>
+            <input type="number" id="carryOverInput" min="0" placeholder="0" onchange="updateCarryOver(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
           </div>
         </div>
       </div>
@@ -216,15 +317,19 @@
           <label class="block text-xs text-slate-300 mb-1">項目名</label>
           <input type="text" id="newItemText" placeholder="例: 勉強 30分" required class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none">
         </div>
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-3 gap-2">
           <div>
             <label class="block text-xs text-slate-300 mb-1">獲得分（数字）</label>
             <input type="number" id="newItemMinutes" placeholder="15" required min="1" class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none">
           </div>
           <div>
+            <label class="block text-xs text-slate-300 mb-1">対象モード</label>
+            <select id="newItemModeSelect" class="w-full text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none font-bold"></select>
+          </div>
+          <div>
             <label class="block text-xs text-slate-300 mb-1">グループ（任意）</label>
-            <select id="newItemGroup" class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none">
-              <option value="">(なし / 通常項目)</option>
+            <select id="newItemGroup" class="w-full text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none">
+              <option value="">(なし / 通常)</option>
             </select>
           </div>
         </div>
@@ -246,16 +351,88 @@
       </div>
     </div>
 
-    <!-- 単一の親コンテナ。通常タスクカードとグループカードがここで混在し順序変更可能 -->
-    <div id="unifiedListContainer" class="space-y-3">
-      <!-- 項目・グループが動的に挿入されます -->
-    </div>
+    <!-- リスト表示コンテナ -->
+    <div id="unifiedListContainer" class="space-y-3 min-h-[100px]"></div>
 
   </main>
 
-  <!-- 編集モーダル -->
+  <!-- 残り時間モーダル -->
+  <div id="sleepCalcModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 border border-indigo-100">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h3 class="font-bold text-indigo-900 text-base flex items-center gap-2">
+          <span>🌙</span> 残り時間・繰り越し確認
+        </h3>
+        <button onclick="closeSleepCalcModal()" class="text-slate-400 hover:text-slate-600 p-1">✕</button>
+      </div>
+
+      <div class="space-y-3">
+        <div class="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 text-center">
+          <div class="text-xs text-indigo-600 font-bold mb-1">今すぐ寝た場合に残るスクリーンタイム</div>
+          <div id="sleepRemainingMinutes" class="text-4xl font-black text-indigo-800">0 分</div>
+        </div>
+
+        <div class="p-4 bg-amber-50 rounded-2xl border border-amber-200">
+          <div class="text-xs text-amber-800 font-bold mb-1 flex items-center gap-1">
+            <span>✨</span> 明日へそのまま繰り越せる時間
+          </div>
+          <p class="text-xs text-slate-700 leading-relaxed">
+            今すぐスマホをやめて寝ると、明日 <span id="calculatedRolloverVal" class="font-bold text-amber-600 text-sm">0分</span> を貯金してそのまま繰り越せます！
+          </p>
+        </div>
+      </div>
+
+      <button onclick="closeSleepCalcModal()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition">
+        閉じる
+      </button>
+    </div>
+  </div>
+
+  <!-- 閲覧用 背景設定モーダル -->
+  <div id="customBgModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
+      <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2">
+        <span>🎨</span> <span id="modalModeTitle">現在のモード</span> の背景設定
+      </h3>
+      
+      <div>
+        <label class="block text-xs font-bold text-slate-500 mb-1">背景のタイプ</label>
+        <select id="userBgType" onchange="toggleUserBgInputs()" class="w-full border rounded-lg p-2 text-sm font-bold">
+          <option value="default">🌐 管理者設定（デフォルト）</option>
+          <option value="color">🎨 好きな色に変更</option>
+          <option value="file">📱 スマホの写真・画像を選ぶ</option>
+          <option value="image">🔗 画像URLを指定</option>
+        </select>
+      </div>
+
+      <div id="userBgColorContainer" class="hidden">
+        <label class="block text-xs font-bold text-slate-500 mb-1">色を選択</label>
+        <input type="color" id="userBgColor" value="#f1f5f9" class="h-10 w-full rounded cursor-pointer border p-1">
+      </div>
+
+      <div id="userBgFileContainer" class="hidden">
+        <label class="block text-xs font-bold text-slate-500 mb-1">スマホの写真アルバムから選択</label>
+        <input type="file" id="userBgFileInput" accept="image/*" onchange="handleImageFileSelect(event)" class="w-full border rounded-lg p-2 text-xs">
+        <div id="filePreview" class="mt-2 text-center hidden">
+          <img id="filePreviewImg" class="h-24 mx-auto rounded border shadow-sm object-cover">
+        </div>
+      </div>
+
+      <div id="userBgImageContainer" class="hidden">
+        <label class="block text-xs font-bold text-slate-500 mb-1">画像URL</label>
+        <input type="url" id="userBgImage" placeholder="https://example.com/photo.jpg" class="w-full border rounded-lg p-2 text-sm">
+      </div>
+
+      <div class="flex gap-2 pt-2">
+        <button onclick="closeCustomBgModal()" class="flex-1 bg-slate-200 text-slate-700 text-sm font-bold py-2 rounded-lg">キャンセル</button>
+        <button onclick="saveUserBgSetting()" class="flex-1 bg-indigo-600 text-white text-sm font-bold py-2 rounded-lg">適用する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- タスク編集モーダル -->
   <div id="editModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
       <h3 class="font-bold text-slate-800 text-base border-b pb-2">項目の編集</h3>
       <input type="hidden" id="editItemId">
       
@@ -264,9 +441,15 @@
         <input type="text" id="editItemText" class="w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
       </div>
 
-      <div>
-        <label class="block text-xs font-bold text-slate-500 mb-1">獲得時間 (分)</label>
-        <input type="number" id="editItemMinutes" min="1" class="w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1">獲得時間 (分)</label>
+          <input type="number" id="editItemMinutes" min="1" class="w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1">対象モード</label>
+          <select id="editItemModeSelect" class="w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"></select>
+        </div>
       </div>
 
       <div>
@@ -290,479 +473,19 @@
   <script>
     let mainSortableInstance = null;
     let groupInnerSortableInstances = [];
+    let tempBase64Image = "";
 
-    // --- UIレンダリング ---
-    window.renderUI = function() {
-      const container = document.getElementById("unifiedListContainer");
-      container.innerHTML = "";
+    setInterval(() => {
+      updateLiveCalculations();
+    }, 1000);
 
-      // 管理者UIの同期
-      const adminPanel = document.getElementById("adminPanel");
-      const adminBtn = document.getElementById("adminToggleBtn");
-      if (window.appState.isAdmin) {
-        adminPanel.classList.remove("hidden");
-        adminBtn.classList.replace("bg-white/20", "bg-amber-400");
-        adminBtn.classList.replace("text-white", "text-slate-900");
-        adminBtn.innerText = "管理者モードON";
-
-        document.getElementById("baseTimeInput").value = window.appState.baseTime || "09:30";
-        document.getElementById("carryOverInput").value = window.appState.carryOverMinutes || 0;
-      } else {
-        adminPanel.classList.add("hidden");
-        adminBtn.classList.replace("bg-amber-400", "bg-white/20");
-        adminBtn.classList.replace("text-slate-900", "text-white");
-        adminBtn.innerText = "管理者モード";
+    function getUserBgMap() {
+      try {
+        return JSON.parse(localStorage.getItem("user_custom_bg_map") || "{}");
+      } catch(e) {
+        return {};
       }
-
-      // ドロップダウン更新
-      updateGroupDropdowns();
-
-      // トータル分数計算（達成タスク + 繰り越し）
-      let earnedMinutes = 0;
-      window.appState.items.forEach(item => {
-        if (item.completed) {
-          earnedMinutes += parseInt(item.minutes || 0, 10);
-        }
-      });
-
-      const carryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
-      const total = earnedMinutes + carryOver;
-
-      document.getElementById("totalMinutes").innerText = total;
-
-      // 繰り越しバッジ切り替え
-      const carryOverBadge = document.getElementById("carryOverBadge");
-      if (carryOver > 0) {
-        carryOverBadge.classList.remove("hidden");
-        document.getElementById("carryOverValue").innerText = carryOver;
-      } else {
-        carryOverBadge.classList.add("hidden");
-      }
-
-      // 終了時間計算
-      calculateEndTime(window.appState.baseTime || "09:30", total);
-
-      // order配列の補正（漏れや重複を補正）
-      ensureOrderIntegrity();
-
-      // リスト描画（order配列の順番で描画）
-      window.appState.order.forEach(id => {
-        if (id.startsWith("group_")) {
-          const group = window.appState.groups.find(g => g.id === id);
-          if (group) {
-            const groupCard = createGroupCard(group);
-            if (groupCard) container.appendChild(groupCard);
-          }
-        } else {
-          const item = window.appState.items.find(i => i.id === id && !i.groupId);
-          if (item) {
-            container.appendChild(createItemCard(item));
-          }
-        }
-      });
-
-      // 並び替えライブラリの初期化
-      initSortable();
-    };
-
-    // order配列のデータ整合性を担保
-    function ensureOrderIntegrity() {
-      const currentOrder = new Set(window.appState.order);
-      const validOrder = [];
-
-      // 実在する通常アイテムとグループを登録
-      window.appState.order.forEach(id => {
-        if (id.startsWith("group_")) {
-          if (window.appState.groups.some(g => g.id === id)) validOrder.push(id);
-        } else {
-          if (window.appState.items.some(i => i.id === id && !i.groupId)) validOrder.push(id);
-        }
-      });
-
-      // まだ order に含まれていない通常アイテムを追加
-      window.appState.items.forEach(i => {
-        if (!i.groupId && !validOrder.includes(i.id)) {
-          validOrder.push(i.id);
-        }
-      });
-
-      // まだ order に含まれていないグループを追加
-      window.appState.groups.forEach(g => {
-        if (!validOrder.includes(g.id)) {
-          validOrder.push(g.id);
-        }
-      });
-
-      window.appState.order = validOrder;
     }
 
-    // 終了時刻計算
-    function calculateEndTime(baseTimeStr, addMinutes) {
-      if (!baseTimeStr) baseTimeStr = "09:30";
-      const parts = baseTimeStr.split(":");
-      let hours = parseInt(parts[0], 10) || 0;
-      let minutes = parseInt(parts[1], 10) || 0;
-
-      let totalMin = hours * 60 + minutes + addMinutes;
-      let endHours = Math.floor(totalMin / 60) % 24;
-      let endMinutes = totalMin % 60;
-
-      const formattedHours = String(endHours).padStart(2, '0');
-      const formattedMinutes = String(endMinutes).padStart(2, '0');
-
-      document.getElementById("calculatedEndTime").innerText = `（最大 ${formattedHours}:${formattedMinutes} まで）`;
-    }
-
-    // 単一タスクカード生成
-    function createItemCard(item) {
-      const card = document.createElement("div");
-      card.dataset.id = item.id;
-      card.dataset.type = "item";
-      
-      card.className = `flex items-center justify-between p-3.5 rounded-xl shadow-sm border transition-all duration-200 ${
-        item.completed 
-          ? 'bg-indigo-50/80 border-indigo-200 ring-1 ring-indigo-300' 
-          : 'bg-white border-slate-200 hover:border-slate-300'
-      }`;
-
-      card.innerHTML = `
-        <div class="flex items-center gap-3 flex-1 min-w-0 mr-2 cursor-pointer" onclick="toggleCheck('${item.id}')">
-          <input type="checkbox" ${item.completed ? 'checked' : ''} 
-            class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none flex-shrink-0">
-          
-          <span class="text-sm font-medium text-slate-800 break-words whitespace-normal min-w-0 leading-snug">
-            ${escapeHtml(item.text)}
-          </span>
-        </div>
-
-        <div class="flex items-center gap-2 flex-shrink-0">
-          <span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm">
-            +${item.minutes}分
-          </span>
-
-          ${window.appState.isAdmin ? `
-            <button onclick="openEditModal('${item.id}')" class="p-1 text-slate-400 hover:text-slate-600 text-xs">✏️</button>
-            <button onclick="deleteItem('${item.id}')" class="p-1 text-rose-400 hover:text-rose-600 text-xs">🗑</button>
-            <span class="drag-handle cursor-grab text-slate-400 hover:text-slate-600 px-1 text-sm">☰</span>
-          ` : ''}
-        </div>
-      `;
-
-      return card;
-    }
-
-    // グループカード生成
-    function createGroupCard(group) {
-      const itemsInGroup = window.appState.items.filter(i => i.groupId === group.id);
-      if (itemsInGroup.length === 0 && !window.appState.isAdmin) return null;
-
-      const groupWrapper = document.createElement("div");
-      groupWrapper.dataset.id = group.id;
-      groupWrapper.dataset.type = "group";
-      groupWrapper.className = "bg-slate-200/60 rounded-2xl p-3 border border-slate-300/70 space-y-2 group-card";
-
-      // グループヘッダー
-      const header = document.createElement("div");
-      header.className = "flex justify-between items-center px-1 text-slate-600 text-xs font-bold";
-      header.innerHTML = `
-        <div class="flex items-center gap-1.5">
-          ${window.appState.isAdmin ? `<span class="drag-handle cursor-grab text-slate-400 hover:text-slate-700 text-sm font-extrabold pr-1">⠿</span>` : ''}
-          <span>📌 どれか1つ選択</span>
-        </div>
-        ${window.appState.isAdmin ? `
-          <button onclick="deleteGroup('${group.id}')" class="text-rose-500 hover:text-rose-700 text-xs">
-            グループ削除
-          </button>
-        ` : ''}
-      `;
-      groupWrapper.appendChild(header);
-
-      // グループ内タスクコンテナ
-      const groupInnerContainer = document.createElement("div");
-      groupInnerContainer.className = "space-y-2 group-inner-container";
-      groupInnerContainer.dataset.groupId = group.id;
-
-      itemsInGroup.forEach(item => {
-        groupInnerContainer.appendChild(createItemCard(item));
-      });
-
-      groupWrapper.appendChild(groupInnerContainer);
-      return groupWrapper;
-    }
-
-    // HTMLエスケープ処理
-    function escapeHtml(str) {
-      return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    }
-
-    // チェックボックス切り替え (選択グループ内排他制御)
-    window.toggleCheck = function(id) {
-      const item = window.appState.items.find(i => i.id === id);
-      if (!item) return;
-
-      const newStatus = !item.completed;
-
-      if (newStatus && item.groupId) {
-        window.appState.items.forEach(i => {
-          if (i.groupId === item.groupId) {
-            i.completed = false;
-          }
-        });
-      }
-
-      item.completed = newStatus;
-      window.renderUI();
-      window.saveState();
-    };
-
-    // 管理者モード切り替え
-    window.toggleAdminMode = function() {
-      if (window.appState.isAdmin) {
-        window.appState.isAdmin = false;
-        window.renderUI();
-      } else {
-        const input = prompt("管理者パスワードを入力してください:");
-        if (input === window.appState.adminPassword) {
-          window.appState.isAdmin = true;
-          window.renderUI();
-        } else if (input !== null) {
-          alert("パスワードが違います。");
-        }
-      }
-    };
-
-    // 基本時間・繰り越し時間更新
-    window.updateBaseTime = function(val) {
-      if (!val) return;
-      window.appState.baseTime = val;
-      window.renderUI();
-      window.saveState();
-    };
-
-    window.updateCarryOver = function(val) {
-      const minutes = parseInt(val, 10) || 0;
-      window.appState.carryOverMinutes = minutes < 0 ? 0 : minutes;
-      window.renderUI();
-      window.saveState();
-    };
-
-    // 項目追加
-    window.addItem = function(e) {
-      e.preventDefault();
-      const textInput = document.getElementById("newItemText");
-      const minInput = document.getElementById("newItemMinutes");
-      const groupSelect = document.getElementById("newItemGroup");
-
-      const newItemId = "item_" + Date.now().toString();
-      const targetGroupId = groupSelect.value || null;
-
-      const newItem = {
-        id: newItemId,
-        type: "item",
-        text: textInput.value.trim(),
-        minutes: parseInt(minInput.value, 10) || 0,
-        completed: false,
-        groupId: targetGroupId
-      };
-
-      window.appState.items.push(newItem);
-
-      // 通常項目の場合は最下部に追加
-      if (!targetGroupId) {
-        window.appState.order.push(newItemId);
-      }
-
-      textInput.value = "";
-      minInput.value = "";
-
-      window.renderUI();
-      window.saveState();
-    };
-
-    // モーダル編集
-    window.openEditModal = function(id) {
-      const item = window.appState.items.find(i => i.id === id);
-      if (!item) return;
-
-      document.getElementById("editItemId").value = item.id;
-      document.getElementById("editItemText").value = item.text;
-      document.getElementById("editItemMinutes").value = item.minutes;
-      document.getElementById("editItemGroup").value = item.groupId || "";
-
-      document.getElementById("editModal").classList.remove("hidden");
-      document.getElementById("editModal").classList.add("flex");
-    };
-
-    window.closeEditModal = function() {
-      document.getElementById("editModal").classList.add("hidden");
-      document.getElementById("editModal").classList.remove("flex");
-    };
-
-    window.saveEditItem = function() {
-      const id = document.getElementById("editItemId").value;
-      const item = window.appState.items.find(i => i.id === id);
-      if (!item) return;
-
-      const oldGroupId = item.groupId;
-      const newGroupId = document.getElementById("editItemGroup").value || null;
-
-      item.text = document.getElementById("editItemText").value.trim();
-      item.minutes = parseInt(document.getElementById("editItemMinutes").value, 10) || 0;
-      item.groupId = newGroupId;
-
-      // 通常項目へ変更された場合は order に追加
-      if (oldGroupId && !newGroupId) {
-        if (!window.appState.order.includes(id)) {
-          window.appState.order.push(id);
-        }
-      } 
-      // グループ項目へ移動した場合は order から除外
-      else if (!oldGroupId && newGroupId) {
-        window.appState.order = window.appState.order.filter(oId => oId !== id);
-      }
-
-      closeEditModal();
-      window.renderUI();
-      window.saveState();
-    };
-
-    // 削除
-    window.deleteItem = function(id) {
-      if (!confirm("この項目を削除しますか？")) return;
-      window.appState.items = window.appState.items.filter(i => i.id !== id);
-      window.appState.order = window.appState.order.filter(oId => oId !== id);
-      window.renderUI();
-      window.saveState();
-    };
-
-    // グループ追加・削除
-    window.addGroup = function() {
-      const count = window.appState.groups.length + 1;
-      const newGroupId = "group_" + Date.now();
-      const newGroup = {
-        id: newGroupId,
-        type: "group",
-        name: `選択グループ ${count}`
-      };
-
-      window.appState.groups.push(newGroup);
-      window.appState.order.push(newGroupId);
-
-      window.renderUI();
-      window.saveState();
-    };
-
-    window.deleteGroup = function(groupId) {
-      if (!confirm("グループを削除しますか？所属項目は通常項目に戻ります。")) return;
-
-      window.appState.groups = window.appState.groups.filter(g => g.id !== groupId);
-      window.appState.order = window.appState.order.filter(oId => oId !== groupId);
-
-      window.appState.items.forEach(i => {
-        if (i.groupId === groupId) {
-          i.groupId = null;
-          if (!window.appState.order.includes(i.id)) {
-            window.appState.order.push(i.id);
-          }
-        }
-      });
-
-      window.renderUI();
-      window.saveState();
-    };
-
-    // パスワード変更
-    window.changePassword = function() {
-      const newPass = prompt("新しい管理者パスワードを入力してください:", window.appState.adminPassword);
-      if (newPass && newPass.trim() !== "") {
-        window.appState.adminPassword = newPass.trim();
-        alert("パスワードを変更しました。");
-        window.saveState();
-      }
-    };
-
-    // ドロップダウン更新
-    function updateGroupDropdowns() {
-      const selects = [document.getElementById("newItemGroup"), document.getElementById("editItemGroup")];
-      
-      selects.forEach(select => {
-        if (!select) return;
-        const currentVal = select.value;
-        select.innerHTML = '<option value="">(なし / 通常項目)</option>';
-
-        window.appState.groups.forEach((g, idx) => {
-          const opt = document.createElement("option");
-          opt.value = g.id;
-          opt.innerText = `選択グループ ${idx + 1}`;
-          select.appendChild(opt);
-        });
-
-        select.value = currentVal;
-      });
-    }
-
-    // ドラッグ＆ドロップ（親コンテナ統一Sortable）
-    function initSortable() {
-      if (mainSortableInstance) {
-        mainSortableInstance.destroy();
-        mainSortableInstance = null;
-      }
-
-      groupInnerSortableInstances.forEach(inst => inst.destroy());
-      groupInnerSortableInstances = [];
-
-      if (!window.appState.isAdmin) return;
-
-      // 1. メインコンテナ（通常項目 & グループカード の自由混在並び替え）
-      const mainContainer = document.getElementById("unifiedListContainer");
-      if (mainContainer) {
-        mainSortableInstance = new Sortable(mainContainer, {
-          handle: ".drag-handle",
-          animation: 150,
-          draggable: "> div", // 通常カードおよびグループカード直下要素
-          onEnd: function() {
-            const children = mainContainer.children;
-            const newOrder = [];
-
-            for (let child of children) {
-              const id = child.dataset.id;
-              if (id) {
-                newOrder.push(id);
-              }
-            }
-
-            window.appState.order = newOrder;
-            window.saveState();
-          }
-        });
-      }
-
-      // 2. 各グループ内のタスク項目の並び替え
-      const innerContainers = document.querySelectorAll(".group-inner-container");
-      innerContainers.forEach(container => {
-        const inst = new Sortable(container, {
-          handle: ".drag-handle",
-          animation: 150,
-          onEnd: function() {
-            const groupId = container.dataset.groupId;
-            const itemCards = container.querySelectorAll("[data-id]");
-            
-            const reorderedGroupItems = [];
-            itemCards.forEach(card => {
-              const item = window.appState.items.find(i => i.id === card.dataset.id);
-              if (item) reorderedGroupItems.push(item);
-            });
-
-            // 当該グループ以外のアイテム
-            const otherItems = window.appState.items.filter(i => i.groupId !== groupId);
-            window.appState.items = [...otherItems, ...reorderedGroupItems];
-
-            window.saveState();
-          }
-        });
-        groupInnerSortableInstances.push(inst);
-      });
-    }
-  </script>
-</body>
-</html>
+    window.openCustomBgModal = function() {
+      const currentModeId = window.appState.currentMode || "weekday";
