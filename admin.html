@@ -134,7 +134,7 @@
       <div class="flex justify-between items-center text-xs">
         <div class="space-y-0.5 text-left">
           <p id="pauseNotice" class="text-amber-600 font-bold hidden">※タイマー一時停止中</p>
-          <p id="beforeStartNotice" class="text-indigo-600 font-bold hidden">※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます</p>
+          <p id="beforeStartNotice" class="text-indigo-600 font-bold">※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます</p>
         </div>
         <div class="ml-auto">
           <button id="pauseToggleBtn" onclick="togglePauseTimer()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-3 py-1 rounded-full border border-amber-200 transition shadow-sm">⏸️ 一時停止</button>
@@ -271,7 +271,7 @@
     window.openCustomBgModal = function() {
       const mode = window.appState.currentMode || "weekday";
       const mObj = (window.appState.modes || []).find(m => m.id === mode);
-      document.getElementById("modalModeTitle").innerText = mObj ? `${mObj.icon\vert{}\vert{}''}${mObj.name}` : "モード";
+      document.getElementById("modalModeTitle").innerText = mObj ? `${mObj.icon||''} ${mObj.name}` : "モード";
       const bgMap = getBgMap(), bg = bgMap[mode] || { type: "default" };
       document.getElementById("userBgType").value = bg.type || "default";
       document.getElementById("userBgColor").value = bg.color || "#f1f5f9";
@@ -383,7 +383,7 @@
         const btn = document.createElement("button");
         btn.onclick = () => setMode(m.id);
         btn.className = `flex-1 py-2 px-3 rounded-lg transition-all text-center whitespace-nowrap ${m.id === window.appState.currentMode ? "bg-white text-indigo-700 font-extrabold shadow-sm" : "text-slate-600"}`;
-        btn.innerText = `${m.icon\vert{}\vert{}'📌'} ${m.name}`; tabC.appendChild(btn);
+        btn.innerText = `${m.icon||'📌'} ${m.name}`; tabC.appendChild(btn);
       });
       document.getElementById("baseTimeInput").value = window.appState.baseTime || "21:30";
       document.getElementById("carryOverInput").value = window.appState.carryOverMinutes || 0;
@@ -411,4 +411,162 @@
       (window.appState.modes || []).forEach(m => {
         const row = document.createElement("div");
         row.className = "flex items-center justify-between bg-slate-800/80 p-2 rounded-lg text-xs gap-2 font-bold";
-        row.innerHTML = `<div><span>${m.icon\vert{}\vert{}'📌'}</span> <span>${
+        row.innerHTML = `<div><span>${m.icon||'📌'}</span> <span>${m.name}</span></div><div class="flex gap-1"><button onclick="editMode('${m.id}')" class="p-1">✏️</button><button onclick="deleteMode('${m.id}')" class="text-rose-400 p-1">🗑</button></div>`;
+        list.appendChild(row);
+      });
+    }
+    window.addCustomMode = () => {
+      const name = prompt("モード名:"); if(!name?.trim()) return;
+      const icon = prompt("アイコン:", "❄️") || "📌";
+      window.appState.modes.push({ id: "mode_" + Date.now(), name: name.trim(), icon: icon.trim(), bgType: "color", bgColor: "#f1f5f9", bgImage: "" });
+      window.renderUI(); window.saveState();
+    };
+    window.editMode = (id) => {
+      const m = (window.appState.modes || []).find(x => x.id === id); if(!m) return;
+      const name = prompt("モード名:", m.name); if(!name?.trim()) return;
+      m.name = name.trim(); m.icon = prompt("アイコン:", m.icon || "📌") || "📌";
+      window.renderUI(); window.saveState();
+    };
+    window.deleteMode = (id) => {
+      if(window.appState.modes.length <= 1) { alert("最低1つ必要です"); return; }
+      if(!confirm("削除しますか？")) return;
+      window.appState.modes = window.appState.modes.filter(x => x.id !== id);
+      if(window.appState.currentMode === id) window.appState.currentMode = window.appState.modes[0].id;
+      window.renderUI(); window.saveState();
+    };
+    function ensureOrder() {
+      const valid = [];
+      (window.appState.order || []).forEach(id => {
+        if(id.startsWith("group_")) { if((window.appState.groups||[]).some(g => g.id === id)) valid.push(id); }
+        else { if((window.appState.items||[]).some(i => i.id === id && !i.groupId)) valid.push(id); }
+      });
+      (window.appState.items || []).forEach(i => { if(!i.groupId && !valid.includes(i.id)) valid.push(i.id); });
+      (window.appState.groups || []).forEach(g => { if(!valid.includes(g.id)) valid.push(g.id); });
+      window.appState.order = valid;
+    }
+    function createItemCard(item) {
+      const card = document.createElement("div");
+      card.dataset.id = item.id;
+      card.className = `flex items-center justify-between p-3.5 rounded-xl shadow-sm border transition-all ${item.completed ? 'bg-indigo-50/90 border-indigo-200 ring-1 ring-indigo-300' : 'bg-white/90 border-slate-200 backdrop-blur-sm'}`;
+      const tModes = item.targetModes || ["all"];
+      let bHtml = tModes.includes("all") ? '<span class="bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.5 rounded">共通</span>' : tModes.map(id => {
+        const m = (window.appState.modes||[]).find(x => x.id === id); return `<span class="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded mr-1">${m?m.name:id}</span>`;
+      }).join("");
+
+      card.innerHTML = `
+        <div class="flex items-center gap-3 flex-1 min-w-0 mr-2 cursor-pointer" onclick="toggleCheck('${item.id}')">
+          <input type="checkbox" ${item.completed?'checked':''} class="w-5 h-5 rounded border-slate-300 text-indigo-600 pointer-events-none flex-shrink-0">
+          <div class="flex flex-col min-w-0"><span class="text-sm font-medium text-slate-800 break-words">${item.text}</span><div class="mt-0.5">${bHtml}</div></div>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm">+${item.minutes}分</span>
+          <button onclick="openEditModal('${item.id}')" class="p-1 text-slate-400 text-xs">✏️</button>
+          <button onclick="deleteItem('${item.id}')" class="p-1 text-rose-400 text-xs">🗑</button>
+          <span class="drag-handle cursor-grab text-slate-400 px-1 text-sm">☰</span>
+        </div>`;
+      return card;
+    }
+    function createGroupCard(group, mode) {
+      const items = (window.appState.items || []).filter(i => i.groupId === group.id && isMatch(i, mode));
+      const wrap = document.createElement("div"); wrap.dataset.id = group.id;
+      wrap.className = "bg-slate-200/70 backdrop-blur-sm rounded-2xl p-3 border border-slate-300/70 space-y-2";
+      wrap.innerHTML = `<div class="flex justify-between items-center px-1 text-slate-600 text-xs font-bold"><div class="flex items-center gap-1.5"><span class="drag-handle cursor-grab text-slate-400 text-sm font-extrabold pr-1">⠿</span><span>📌 どれか1つ選択</span></div><button onclick="deleteGroup('${group.id}')" class="text-rose-500 text-xs">グループ削除</button></div>`;
+      const inner = document.createElement("div"); inner.className = "space-y-2 group-inner"; inner.dataset.groupId = group.id;
+      items.forEach(i => inner.appendChild(createItemCard(i)));
+      wrap.appendChild(inner); return wrap;
+    }
+    window.toggleCheck = (id) => {
+      const i = (window.appState.items || []).find(x => x.id === id); if(!i) return;
+      i.completed = !i.completed;
+      if(i.completed && i.groupId) window.appState.items.forEach(x => { if(x.groupId === i.groupId && x.id !== id) x.completed = false; });
+      window.renderUI(); window.saveState();
+    };
+    window.updateBaseTime = (v) => { if(!v) return; window.appState.baseTime = v; window.renderUI(); window.saveState(); };
+    window.updateCarryOver = (v) => { window.appState.carryOverMinutes = Math.max(0, parseInt(v||0, 10)); window.renderUI(); window.saveState(); };
+    window.addItem = (e) => {
+      e.preventDefault();
+      const text = document.getElementById("newItemText").value.trim(), min = parseInt(document.getElementById("newItemMinutes").value, 10) || 0;
+      const mSel = document.getElementById("newItemModeSelect").value, gSel = document.getElementById("newItemGroup").value || null;
+      const id = "item_" + Date.now();
+      window.appState.items.push({ id, type: "item", text, minutes: min, completed: false, groupId: gSel, targetModes: mSel === "all" ? ["all"] : [mSel] });
+      if(!gSel) window.appState.order.push(id);
+      document.getElementById("newItemText").value = ""; document.getElementById("newItemMinutes").value = "";
+      window.renderUI(); window.saveState();
+    };
+    window.openEditModal = (id) => {
+      const i = (window.appState.items || []).find(x => x.id === id); if(!i) return;
+      document.getElementById("editItemId").value = i.id;
+      document.getElementById("editItemText").value = i.text;
+      document.getElementById("editItemMinutes").value = i.minutes;
+      const t = i.targetModes || ["all"];
+      document.getElementById("editItemModeSelect").value = t.includes("all") ? "all" : t[0];
+      document.getElementById("editItemGroup").value = i.groupId || "";
+      document.getElementById("editModal").classList.remove("hidden");
+      document.getElementById("editModal").classList.add("flex");
+    };
+    window.closeEditModal = () => { document.getElementById("editModal").classList.add("hidden"); document.getElementById("editModal").classList.remove("flex"); };
+    window.saveEditItem = () => {
+      const i = (window.appState.items || []).find(x => x.id === document.getElementById("editItemId").value); if(!i) return;
+      const oldG = i.groupId, newG = document.getElementById("editItemGroup").value || null, mSel = document.getElementById("editItemModeSelect").value;
+      i.text = document.getElementById("editItemText").value.trim();
+      i.minutes = parseInt(document.getElementById("editItemMinutes").value, 10) || 0;
+      i.targetModes = mSel === "all" ? ["all"] : [mSel];
+      i.groupId = newG;
+      if(oldG && !newG) window.appState.order.push(i.id);
+      else if(!oldG && newG) window.appState.order = window.appState.order.filter(id => id !== i.id);
+      closeEditModal(); window.renderUI(); window.saveState();
+    };
+    window.deleteItem = (id) => {
+      if(!confirm("削除しますか？")) return;
+      window.appState.items = window.appState.items.filter(x => x.id !== id);
+      window.appState.order = window.appState.order.filter(x => x !== id);
+      window.renderUI(); window.saveState();
+    };
+    window.addGroup = () => {
+      const id = "group_" + Date.now();
+      window.appState.groups.push({ id, type: "group", name: "選択グループ" });
+      window.appState.order.push(id);
+      window.renderUI(); window.saveState();
+    };
+    window.deleteGroup = (id) => {
+      if(!confirm("グループを削除しますか？")) return;
+      window.appState.groups = window.appState.groups.filter(g => g.id !== id);
+      window.appState.order = window.appState.order.filter(x => x !== id);
+      window.appState.items.forEach(i => { if(i.groupId === id) { i.groupId = null; window.appState.order.push(i.id); } });
+      window.renderUI(); window.saveState();
+    };
+    function updateDropdowns() {
+      [document.getElementById("newItemGroup"), document.getElementById("editItemGroup")].forEach(s => {
+        if(!s) return; const cur = s.value; s.innerHTML = '<option value="">(なし)</option>';
+        window.appState.groups.forEach((g, idx) => { const opt = document.createElement("option"); opt.value = g.id; opt.innerText = `選択グループ ${idx+1}`; s.appendChild(opt); });
+        s.value = cur;
+      });
+      [document.getElementById("newItemModeSelect"), document.getElementById("editItemModeSelect")].forEach(s => {
+        if(!s) return; const cur = s.value; s.innerHTML = '<option value="all">✨ 共通（全モード）</option>';
+        window.appState.modes.forEach(m => { const opt = document.createElement("option"); opt.value = m.id; opt.innerText = `${m.icon||'📌'} ${m.name}`; s.appendChild(opt); });
+        s.value = cur;
+      });
+    }
+    function initSort() {
+      if(mainSort) { mainSort.destroy(); mainSort = null; }
+      innerSorts.forEach(s => s.destroy()); innerSorts = [];
+      const mc = document.getElementById("unifiedListContainer");
+      if(mc) {
+        mainSort = new Sortable(mc, { handle: ".drag-handle", animation: 150, draggable: "> div", onEnd: () => {
+          window.appState.order = Array.from(mc.children).map(c => c.dataset.id).filter(Boolean);
+          window.saveState();
+        }});
+      }
+      document.querySelectorAll(".group-inner").forEach(el => {
+        innerSorts.push(new Sortable(el, { handle: ".drag-handle", animation: 150, onEnd: () => {
+          const gId = el.dataset.groupId, other = window.appState.items.filter(i => i.groupId !== gId);
+          const reordered = Array.from(el.querySelectorAll("[data-id]")).map(c => window.appState.items.find(i => i.id === c.dataset.id)).filter(Boolean);
+          window.appState.items = [...other, ...reordered];
+          window.saveState();
+        }}));
+      });
+    }
+    window.addEventListener("DOMContentLoaded", () => { window.renderUI(); });
+  </script>
+</body>
+</html>
