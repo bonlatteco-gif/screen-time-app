@@ -165,9 +165,48 @@
   <script>
     setInterval(updateLive, 1000);
 
-    function getBgMap() { try { return JSON.parse(localStorage.getItem("user_custom_bg_map") || "{}"); } catch(e){ return {}; } }
+    function getBgMap() { 
+      try { return JSON.parse(localStorage.getItem("user_custom_bg_map") || "{}"); } 
+      catch(e){ return {}; } 
+    }
 
-    window.setMode = (id) => { window.appState.currentMode = id; window.renderUI(); window.saveState(); };
+    function applyBg() {
+      const body = document.getElementById("appBody");
+      if(!body) return;
+      const mode = window.appState.currentMode || "weekday";
+      const bgMap = getBgMap();
+      const bg = bgMap[mode] || { type: "default" };
+
+      if(bg.type === "color" && bg.color) { 
+        body.style.backgroundImage = "none"; 
+        body.style.backgroundColor = bg.color; 
+        return; 
+      }
+      if(bg.type === "file" && bg.fileData) { 
+        body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${bg.fileData}')`; 
+        body.style.backgroundColor = ""; 
+        return; 
+      }
+      if(bg.type === "image" && bg.image) { 
+        body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${bg.image}')`; 
+        body.style.backgroundColor = ""; 
+        return; 
+      }
+      const mObj = (window.appState.modes || []).find(m => m.id === mode);
+      if(mObj && mObj.bgType === "image" && mObj.bgImage) { 
+        body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${mObj.bgImage}')`; 
+        body.style.backgroundColor = ""; 
+      } else { 
+        body.style.backgroundImage = "none"; 
+        body.style.backgroundColor = (mObj && mObj.bgColor) ? mObj.bgColor : "#f1f5f9"; 
+      }
+    }
+
+    window.setMode = (id) => { 
+      window.appState.currentMode = id; 
+      window.renderUI(); 
+      window.saveState(); 
+    };
 
     function calcUsed() {
       if(window.appState.isPaused) return 0;
@@ -209,17 +248,6 @@
       
       let endM = sH * 60 + sM + rem, eH = Math.floor(endM / 60) % 24, eMin = endM % 60;
       document.getElementById("calculatedEndTime").innerText = `（最大 ${String(eH).padStart(2,'0')}:${String(eMin).padStart(2,'0')} まで）`;
-    }
-
-    function applyBg() {
-      const body = document.getElementById("appBody"), mode = window.appState.currentMode || "weekday";
-      const bg = getBgMap()[mode] || { type: "default" };
-      if(bg.type === "color" && bg.color) { body.style.backgroundImage = "none"; body.style.backgroundColor = bg.color; return; }
-      if(bg.type === "file" && bg.fileData) { body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${bg.fileData}')`; body.style.backgroundColor = ""; return; }
-      if(bg.type === "image" && bg.image) { body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${bg.image}')`; body.style.backgroundColor = ""; return; }
-      const mObj = (window.appState.modes || []).find(m => m.id === mode);
-      if(mObj && mObj.bgType === "image" && mObj.bgImage) { body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${mObj.bgImage}')`; body.style.backgroundColor = ""; }
-      else { body.style.backgroundImage = "none"; body.style.backgroundColor = (mObj && mObj.bgColor) ? mObj.bgColor : "#f1f5f9"; }
     }
 
     window.renderUI = function() {
@@ -292,7 +320,10 @@
       if(i.completed && i.groupId) window.appState.items.forEach(x => { if(x.groupId === i.groupId && x.id !== id) x.completed = false; });
       window.renderUI(); window.saveState();
     };
-    window.addEventListener("DOMContentLoaded", () => { window.renderUI(); });
+    window.addEventListener("DOMContentLoaded", () => { 
+      loadLocal(); 
+      window.renderUI(); 
+    });
   </script>
 </body>
 </html>
