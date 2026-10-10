@@ -40,7 +40,7 @@
       baseTime: "21:30",
       carryOverMinutes: 0,
       lastResetTimestamp: Date.now(),
-      isAdmin: false, // 閲覧モードはfalse
+      isAdmin: false,
       isPaused: false,
       currentMode: initMode
     };
@@ -210,6 +210,7 @@
       let endM = sH * 60 + sM + rem, eH = Math.floor(endM / 60) % 24, eMin = endM % 60;
       document.getElementById("calculatedEndTime").innerText = `（最大 ${String(eH).padStart(2,'0')}:${String(eMin).padStart(2,'0')} まで）`;
     }
+
     function applyBg() {
       const body = document.getElementById("appBody"), mode = window.appState.currentMode || "weekday";
       const bg = getBgMap()[mode] || { type: "default" };
@@ -220,6 +221,7 @@
       if(mObj && mObj.bgType === "image" && mObj.bgImage) { body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${mObj.bgImage}')`; body.style.backgroundColor = ""; }
       else { body.style.backgroundImage = "none"; body.style.backgroundColor = (mObj && mObj.bgColor) ? mObj.bgColor : "#f1f5f9"; }
     }
+
     window.renderUI = function() {
       applyBg();
       const tabC = document.getElementById("modeTabsContainer"); tabC.innerHTML = "";
