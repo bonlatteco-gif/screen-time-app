@@ -63,6 +63,16 @@
       if (docRef) { try { await setDoc(docRef, p); } catch(err) {} }
     };
 
+    function sanitizeData(data) {
+      if (data.items) {
+        data.items.forEach(i => {
+          if (!i.targetModes) {
+            i.targetModes = i.dayType ? [i.dayType] : ["all"];
+          }
+        });
+      }
+    }
+
     function isMatch(item, mode) {
       const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
       if (targets.includes("all") || targets.includes("both")) return true;
@@ -100,6 +110,7 @@
       if (local) {
         try {
           const d = JSON.parse(local);
+          sanitizeData(d);
           Object.assign(window.appState, d);
         } catch(e) {}
       }
@@ -107,8 +118,11 @@
 
     if (docRef) {
       onSnapshot(docRef, (snap) => {
-        if (snap.exists()) { Object.assign(window.appState, snap.data()); }
-        else { window.saveState(); }
+        if (snap.exists()) { 
+          const d = snap.data();
+          sanitizeData(d);
+          Object.assign(window.appState, d); 
+        } else { window.saveState(); }
         checkReset();
         if (window.renderUI) window.renderUI();
       }, () => { loadLocal(); checkReset(); if (window.renderUI) window.renderUI(); });
