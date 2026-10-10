@@ -130,10 +130,11 @@
   <main class="max-w-md mx-auto p-4 space-y-4">
     <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
 
-    <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative space-y-3.5">
+    <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative space-y-4">
       <div class="flex flex-col items-center gap-2 text-xs">
-        <div class="text-center">
-          <p id="pauseNotice" class="text-amber-600 font-bold hidden">※タイマー一時停止中</p>
+        <!-- 統一した見た目のインフォメーション行 -->
+        <div class="text-center w-full">
+          <p id="pauseNotice" class="text-indigo-600 font-bold hidden">※タイマー一時停止中</p>
           <p id="beforeStartNotice" class="text-indigo-600 font-bold">※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます</p>
         </div>
         <div class="w-full flex justify-end">
@@ -151,11 +152,12 @@
         <span id="calculatedEndTime" class="text-sm font-semibold text-slate-500">（最大 21:30 まで）</span>
       </div>
 
-      <p id="carryOverBadge" class="text-xs text-indigo-600 font-medium hidden">※前日からの繰り越し時間（<span id="carryOverValue">0</span>分）を含みます</p>
+      <!-- 統一した見た目に合わせた繰り越し表示 -->
+      <p id="carryOverBadge" class="text-xs text-indigo-600 font-bold hidden">※前日からの繰り越し時間（<span id="carryOverValue">0</span>分）を含みます</p>
 
-      <!-- 上下のパディングを広げました (py-4 に変更) -->
-      <div class="p-4 py-4 bg-amber-50/90 rounded-xl border border-amber-200/80 shadow-inner flex items-center justify-center gap-1.5">
-        <span class="text-base">✨</span>
+      <!-- 上下のパディングをさらに広げて適度な大きさに調整 -->
+      <div class="p-5 bg-amber-50/90 rounded-xl border border-amber-200/80 shadow-inner flex items-center justify-center gap-2">
+        <span class="text-lg">✨</span>
         <p class="text-xs font-bold text-amber-800">今すぐ寝ると明日 <span id="sleepRemainingMinutes" class="text-sm font-extrabold text-amber-600">0分</span> 貯金できます！</p>
       </div>
 
