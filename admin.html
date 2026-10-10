@@ -191,7 +191,7 @@
       <form onsubmit="addItem(event)" class="space-y-3">
         <div>
           <label class="block text-xs text-slate-300 mb-1">項目名</label>
-          <input type="text" id="newItemText" placeholder="例: 勉強 30分" required class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none text-slate-900">
+          <input type="text" id="newItemText" placeholder="例: 勉強 30分" required class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none">
         </div>
         <div class="grid grid-cols-3 gap-2">
           <div>
@@ -271,7 +271,7 @@
     window.openCustomBgModal = function() {
       const mode = window.appState.currentMode || "weekday";
       const mObj = (window.appState.modes || []).find(m => m.id === mode);
-      document.getElementById("modalModeTitle").innerText = mObj ? `${mObj.icon||''} ${mObj.name}` : "モード";
+      document.getElementById("modalModeTitle").innerText = mObj ? `${mObj.icon\vert{}\vert{}''}${mObj.name}` : "モード";
       const bgMap = getBgMap(), bg = bgMap[mode] || { type: "default" };
       document.getElementById("userBgType").value = bg.type || "default";
       document.getElementById("userBgColor").value = bg.color || "#f1f5f9";
@@ -371,5 +371,44 @@
       const bg = getBgMap()[mode] || { type: "default" };
       if(bg.type === "color" && bg.color) { body.style.backgroundImage = "none"; body.style.backgroundColor = bg.color; return; }
       if(bg.type === "file" && bg.fileData) { body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${bg.fileData}')`; body.style.backgroundColor = ""; return; }
-      if(bg.type === "image" && bg
-         
+      if(bg.type === "image" && bg.image) { body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${bg.image}')`; body.style.backgroundColor = ""; return; }
+      const mObj = (window.appState.modes || []).find(m => m.id === mode);
+      if(mObj && mObj.bgType === "image" && mObj.bgImage) { body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${mObj.bgImage}')`; body.style.backgroundColor = ""; }
+      else { body.style.backgroundImage = "none"; body.style.backgroundColor = (mObj && mObj.bgColor) ? mObj.bgColor : "#f1f5f9"; }
+    }
+    window.renderUI = function() {
+      applyBg();
+      const tabC = document.getElementById("modeTabsContainer"); tabC.innerHTML = "";
+      (window.appState.modes || []).forEach(m => {
+        const btn = document.createElement("button");
+        btn.onclick = () => setMode(m.id);
+        btn.className = `flex-1 py-2 px-3 rounded-lg transition-all text-center whitespace-nowrap ${m.id === window.appState.currentMode ? "bg-white text-indigo-700 font-extrabold shadow-sm" : "text-slate-600"}`;
+        btn.innerText = `${m.icon\vert{}\vert{}'📌'} ${m.name}`; tabC.appendChild(btn);
+      });
+      document.getElementById("baseTimeInput").value = window.appState.baseTime || "21:30";
+      document.getElementById("carryOverInput").value = window.appState.carryOverMinutes || 0;
+      renderAdminModes(); updateDropdowns();
+      
+      const carry = parseInt(window.appState.carryOverMinutes||0, 10), badge = document.getElementById("carryOverBadge");
+      if(carry > 0) { badge.classList.remove("hidden"); document.getElementById("carryOverValue").innerText = carry; } else { badge.classList.add("hidden"); }
+      updatePauseUI(); updateLive(); ensureOrder();
+
+      const container = document.getElementById("unifiedListContainer"); container.innerHTML = "";
+      const curMode = window.appState.currentMode || "weekday";
+      (window.appState.order || []).forEach(id => {
+        if(id.startsWith("group_")) {
+          const g = (window.appState.groups || []).find(gr => gr.id === id);
+          if(g) container.appendChild(createGroupCard(g, curMode));
+        } else {
+          const i = (window.appState.items || []).find(it => it.id === id && !it.groupId);
+          if(i && isMatch(i, curMode)) container.appendChild(createItemCard(i));
+        }
+      });
+      initSort();
+    };
+    function renderAdminModes() {
+      const list = document.getElementById("adminModeList"); list.innerHTML = "";
+      (window.appState.modes || []).forEach(m => {
+        const row = document.createElement("div");
+        row.className = "flex items-center justify-between bg-slate-800/80 p-2 rounded-lg text-xs gap-2 font-bold";
+        row.innerHTML = `<div><span>${m.icon\vert{}\vert{}'📌'}</span> <span>${
