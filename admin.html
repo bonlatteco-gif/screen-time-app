@@ -128,9 +128,7 @@
   </header>
 
   <main class="max-w-md mx-auto p-4 space-y-4">
-    <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
-
-    <!-- 画面の最上部（カードの外）に移動した通知と一時停止ボタン -->
+    <!-- 画面最上部の通知と一時停止ボタン -->
     <div class="flex justify-between items-center px-1 text-xs">
       <div>
         <p id="pauseNotice" class="text-indigo-700 font-bold hidden">※タイマー一時停止中</p>
@@ -164,6 +162,9 @@
         <p class="text-sm font-extrabold text-indigo-600 tracking-wide py-0.5">タスクを達成して時間をゲットしよう！</p>
       </div>
     </div>
+
+    <!-- モード変更タブ（白枠の下、タスクの前に移動） -->
+    <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
 
     <div class="bg-slate-800/90 backdrop-blur-md text-white rounded-2xl p-4 shadow-lg space-y-4">
       <h2 class="text-sm font-bold flex items-center gap-1.5 text-amber-400 border-b border-slate-700 pb-2">⚙️ 管理者設定</h2>
