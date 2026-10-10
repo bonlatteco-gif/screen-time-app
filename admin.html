@@ -1,3 +1,8 @@
+「今すぐ寝ると明日〜貯金できます」のバナー枠を、上下の余白（パディング）を広げてゆったり押しやすいサイズに調整しました！
+
+以下の完全版コードをコピーして、GitHubの admin.html にまるごと上書き保存してください。
+
+HTML
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -131,13 +136,12 @@
     <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
 
     <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative space-y-3.5">
-      <!-- 上下配置に変更 -->
       <div class="flex flex-col items-center gap-2 text-xs">
         <div class="text-center">
           <p id="pauseNotice" class="text-amber-600 font-bold hidden">※タイマー一時停止中</p>
           <p id="beforeStartNotice" class="text-indigo-600 font-bold">※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます</p>
         </div>
-        <div>
+        <div class="w-full flex justify-end">
           <button id="pauseToggleBtn" onclick="togglePauseTimer()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-4 py-1.5 rounded-full border border-amber-200 transition shadow-sm">⏸️ 一時停止</button>
         </div>
       </div>
@@ -154,7 +158,8 @@
 
       <p id="carryOverBadge" class="text-xs text-indigo-600 font-medium hidden">※前日からの繰り越し時間（<span id="carryOverValue">0</span>分）を含みます</p>
 
-      <div class="p-3 bg-amber-50/90 rounded-xl border border-amber-200/80 shadow-inner flex items-center justify-center gap-1.5">
+      <!-- 上下のパディングを広げました (py-4 に変更) -->
+      <div class="p-4 py-4 bg-amber-50/90 rounded-xl border border-amber-200/80 shadow-inner flex items-center justify-center gap-1.5">
         <span class="text-base">✨</span>
         <p class="text-xs font-bold text-amber-800">今すぐ寝ると明日 <span id="sleepRemainingMinutes" class="text-sm font-extrabold text-amber-600">0分</span> 貯金できます！</p>
       </div>
