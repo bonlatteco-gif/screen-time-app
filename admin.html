@@ -1,3 +1,8 @@
+サマリーカードの横並びを上下にして、上に「※本日21:30から時間の消費が開始されます」、下に「一時停止ボタン」がドーンと配置される形にレイアウトを直しました！
+
+以下の完全版コードをコピーして、GitHubの admin.html にまるごと上書き保存してください。
+
+HTML
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -131,13 +136,14 @@
     <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
 
     <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative space-y-3.5">
-      <div class="flex justify-between items-center text-xs">
-        <div class="space-y-0.5 text-left">
+      <!-- 上下配置に変更 -->
+      <div class="flex flex-col items-center gap-2 text-xs">
+        <div class="text-center">
           <p id="pauseNotice" class="text-amber-600 font-bold hidden">※タイマー一時停止中</p>
           <p id="beforeStartNotice" class="text-indigo-600 font-bold">※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます</p>
         </div>
-        <div class="ml-auto">
-          <button id="pauseToggleBtn" onclick="togglePauseTimer()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-3 py-1 rounded-full border border-amber-200 transition shadow-sm">⏸️ 一時停止</button>
+        <div>
+          <button id="pauseToggleBtn" onclick="togglePauseTimer()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-4 py-1.5 rounded-full border border-amber-200 transition shadow-sm">⏸️ 一時停止</button>
         </div>
       </div>
 
@@ -328,10 +334,10 @@
       const btn = document.getElementById("pauseToggleBtn"), notice = document.getElementById("pauseNotice"), box = document.getElementById("totalMinutesDisplayContainer");
       if(!btn) return;
       if(window.appState.isPaused) {
-        btn.innerHTML = "▶️ 再開"; btn.className = "text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full border border-emerald-200 transition shadow-sm";
+        btn.innerHTML = "▶️ 再開"; btn.className = "text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold px-4 py-1.5 rounded-full border border-emerald-200 transition shadow-sm";
         notice.classList.remove("hidden"); box.classList.add("opacity-50", "animate-pulse");
       } else {
-        btn.innerHTML = "⏸️ 一時停止"; btn.className = "text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-3 py-1 rounded-full border border-amber-200 transition shadow-sm";
+        btn.innerHTML = "⏸️ 一時停止"; btn.className = "text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-4 py-1.5 rounded-full border border-amber-200 transition shadow-sm";
         notice.classList.add("hidden"); box.classList.remove("opacity-50", "animate-pulse");
       }
     }
