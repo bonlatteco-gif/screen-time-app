@@ -66,7 +66,7 @@
       baseTime: "21:30",
       carryOverMinutes: 0,
       lastResetTimestamp: new Date().getTime(),
-      isAdmin: true, // 管理者画面は初期ON
+      isAdmin: true,
       isPaused: false,
       currentMode: initialMode
     };
@@ -109,7 +109,7 @@
     };
 
     function isItemInMode(item, modeId) {
-      if (window.appState.isAdmin) return true; // 管理者は常時全表示
+      if (window.appState.isAdmin) return true;
       const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
       if (targets.includes("all") || targets.includes("both")) return true;
       return targets.includes(modeId);
@@ -213,10 +213,11 @@
   </script>
   <style>
     .bg-custom-fitted {
-      background-size: cover;
+      background-size: contain; /* 写真が伸びないように全体収めに変更 */
       background-position: center;
-      background-repeat: no-repeat;
+      background-repeat: repeat;
       background-attachment: fixed;
+      background-color: #f1f5f9;
     }
   </style>
 </head>
@@ -243,37 +244,52 @@
     <!-- モード切り替えタブ -->
     <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
 
-    <!-- 獲得時間サマリーカード -->
-    <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative">
-      <div class="flex justify-between items-center mb-1">
-        <span class="text-xs font-bold text-slate-400 tracking-wider uppercase">合計獲得スクリーンタイム</span>
-        <div class="flex gap-1.5">
-          <button id="pauseToggleBtn" onclick="togglePauseTimer()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-2.5 py-1 rounded-full border border-amber-200 transition">
-            ⏸️ 一時停止
-          </button>
-          <button onclick="openSleepCalcModal()" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold px-2.5 py-1 rounded-full border border-indigo-200 transition">
-            🌙 残時間を確認
-          </button>
-        </div>
+    <!-- 獲得時間サマリーカード（ご要望のデザインに刷新） -->
+    <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative space-y-3">
+      
+      <!-- 1行目: タイトル ＆ 残時間を確認 -->
+      <div class="flex justify-between items-center">
+        <span class="text-xs font-bold text-slate-500 tracking-wider uppercase">合計獲得スクリーンタイム</span>
+        <button onclick="openSleepCalcModal()" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold px-2.5 py-1 rounded-full border border-indigo-200 transition">
+          🌙 残時間を確認
+        </button>
       </div>
 
-      <div class="flex justify-center items-baseline my-1 flex-wrap gap-x-2">
+      <!-- 2行目: 時間 ＆ 最大時間 -->
+      <div class="flex justify-center items-baseline flex-wrap gap-x-2 my-1">
         <div id="totalMinutesDisplayContainer" class="transition-opacity">
           <span id="totalMinutes" class="text-5xl font-extrabold text-indigo-800">0</span>
           <span class="text-lg font-bold text-slate-700 ml-0.5">分</span>
         </div>
         <span id="calculatedEndTime" class="text-sm font-semibold text-slate-500">（最大 21:30 まで）</span>
       </div>
+
+      <!-- 繰り越し情報 -->
       <p id="carryOverBadge" class="text-xs text-indigo-600 font-medium hidden">
         ※前日からの繰り越し時間（<span id="carryOverValue">0</span>分）を含みます
       </p>
-      <p id="pauseNotice" class="text-xs text-amber-600 font-bold mt-1 hidden">
-        ※タイマー一時停止中（時間の消費が止まっています）
+
+      <!-- 消費開始アナウンス ＆ 一時停止アナウンス -->
+      <div class="space-y-1">
+        <p id="pauseNotice" class="text-xs text-amber-600 font-bold hidden">
+          ※タイマー一時停止中（時間の消費が止まっています）
+        </p>
+        <p id="beforeStartNotice" class="text-xs text-indigo-600 font-bold hidden">
+          ※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます
+        </p>
+      </div>
+
+      <!-- メインメッセージ（少し目立つように調整） -->
+      <p id="defaultSummaryText" class="text-sm font-bold text-indigo-600 bg-indigo-50/80 py-1.5 px-3 rounded-lg border border-indigo-100 shadow-inner">
+        ✨ タスクを達成して時間をゲットしよう！
       </p>
-      <p id="beforeStartNotice" class="text-xs text-indigo-600 font-bold mt-1 hidden">
-        ※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます
-      </p>
-      <p id="defaultSummaryText" class="text-xs text-slate-400 mt-1">タスクを達成して時間をゲットしよう！</p>
+
+      <!-- 最下部: 一時停止ボタン -->
+      <div class="pt-1 flex justify-center">
+        <button id="pauseToggleBtn" onclick="togglePauseTimer()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-4 py-1.5 rounded-full border border-amber-200 transition shadow-sm">
+          ⏸️ 一時停止
+        </button>
+      </div>
     </div>
 
     <!-- 管理者パネル -->
@@ -621,13 +637,13 @@
 
       if (window.appState.isPaused) {
         pauseBtn.innerHTML = "▶️ 再開";
-        pauseBtn.className = "text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold px-2.5 py-1 rounded-full border border-emerald-200 transition";
+        pauseBtn.className = "text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold px-4 py-1.5 rounded-full border border-emerald-200 transition shadow-sm";
         pauseNotice.classList.remove("hidden");
         defaultText.classList.add("hidden");
         displayContainer.classList.add("opacity-50", "animate-pulse");
       } else {
         pauseBtn.innerHTML = "⏸️ 一時停止";
-        pauseBtn.className = "text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-2.5 py-1 rounded-full border border-amber-200 transition";
+        pauseBtn.className = "text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-4 py-1.5 rounded-full border border-amber-200 transition shadow-sm";
         pauseNotice.classList.add("hidden");
         defaultText.classList.remove("hidden");
         displayContainer.classList.remove("opacity-50", "animate-pulse");
