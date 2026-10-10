@@ -244,7 +244,7 @@
     <!-- モード切り替えタブ -->
     <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
 
-    <!-- 獲得時間サマリーカード（ご要望のデザインに刷新） -->
+   <!-- 獲得時間サマリーカード -->
     <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative space-y-3">
       
       <!-- 1行目: タイトル ＆ 残時間を確認 -->
@@ -279,130 +279,20 @@
         </p>
       </div>
 
-      <!-- メインメッセージ（少し目立つように調整） -->
-      <p id="defaultSummaryText" class="text-sm font-bold text-indigo-600 bg-indigo-50/80 py-1.5 px-3 rounded-lg border border-indigo-100 shadow-inner">
-        ✨ タスクを達成して時間をゲットしよう！
-      </p>
-
-      <!-- 最下部: 一時停止ボタン -->
+      <!-- 一時停止ボタン（「※本日〜」の下に配置） -->
       <div class="pt-1 flex justify-center">
         <button id="pauseToggleBtn" onclick="togglePauseTimer()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-4 py-1.5 rounded-full border border-amber-200 transition shadow-sm">
           ⏸️ 一時停止
         </button>
       </div>
-    </div>
 
-    <!-- 管理者パネル -->
-    <div id="adminPanel" class="bg-slate-800/90 backdrop-blur-md text-white rounded-2xl p-4 shadow-lg space-y-4">
-      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
-        <h2 class="text-sm font-bold flex items-center gap-1.5 text-amber-400">
-          ⚙️ 管理者設定
-        </h2>
-        <span class="text-xs bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded font-bold">全項目表示中</span>
-      </div>
-
-      <!-- モード設定セクション -->
-      <div class="bg-slate-700/60 p-3 rounded-xl space-y-3">
-        <div class="flex justify-between items-center">
-          <h3 class="text-xs font-bold text-amber-300">📁 モード管理（夏休み・冬休み等）</h3>
-          <button onclick="addCustomMode()" class="text-[11px] bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold px-2 py-1 rounded">
-            ＋ 新規モード追加
-          </button>
-        </div>
-        <div id="adminModeList" class="space-y-1.5"></div>
-      </div>
-
-      <!-- 基本時間 & 繰り越し時間 設定 -->
-      <div class="bg-slate-700/60 p-3 rounded-xl space-y-3">
-        <h3 class="text-xs font-bold text-amber-300">⏱️ 時間・繰り越し設定</h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <div>
-            <label class="block text-xs text-slate-300 mb-1">基本終了（カウント開始）時間</label>
-            <input type="time" id="baseTimeInput" onchange="updateBaseTime(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
-          </div>
-          <div>
-            <label class="block text-xs text-slate-300 mb-1">現在の繰り越し(分)</label>
-            <input type="number" id="carryOverInput" min="0" placeholder="0" onchange="updateCarryOver(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
-          </div>
-        </div>
-      </div>
-
-      <!-- 新規項目追加フォーム -->
-      <form onsubmit="addItem(event)" class="space-y-3">
-        <div>
-          <label class="block text-xs text-slate-300 mb-1">項目名</label>
-          <input type="text" id="newItemText" placeholder="例: 勉強 30分" required class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none">
-        </div>
-        <div class="grid grid-cols-3 gap-2">
-          <div>
-            <label class="block text-xs text-slate-300 mb-1">獲得分（数字）</label>
-            <input type="number" id="newItemMinutes" placeholder="15" required min="1" class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none">
-          </div>
-          <div>
-            <label class="block text-xs text-slate-300 mb-1">対象モード</label>
-            <select id="newItemModeSelect" class="w-full text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none font-bold"></select>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-300 mb-1">グループ（任意）</label>
-            <select id="newItemGroup" class="w-full text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none">
-              <option value="">(なし / 通常)</option>
-            </select>
-          </div>
-        </div>
-        <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-2 rounded-lg text-sm transition">
-          ＋ 項目を追加する
-        </button>
-      </form>
-
-      <!-- グループ管理 & パスワード変更 -->
-      <div class="pt-2 border-t border-slate-700 space-y-3">
-        <div class="flex gap-2">
-          <button onclick="addGroup()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg text-slate-200">
-            ＋ 新規選択グループ追加
-          </button>
-          <button onclick="changePassword()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg text-slate-200">
-            🔑 パスワード変更
-          </button>
-        </div>
+      <!-- メインメッセージ（ボタンっぽさを無くして目立つテキストに変更） -->
+      <div class="pt-1 border-t border-slate-100">
+        <p id="defaultSummaryText" class="text-xs font-extrabold text-indigo-600 tracking-wide mt-2">
+          ✨ タスクを達成して時間をゲットしよう！
+        </p>
       </div>
     </div>
-
-    <!-- リスト表示コンテナ -->
-    <div id="unifiedListContainer" class="space-y-3 min-h-[100px]"></div>
-
-  </main>
-
-  <!-- 残り時間モーダル -->
-  <div id="sleepCalcModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 border border-indigo-100">
-      <div class="flex justify-between items-center border-b pb-2">
-        <h3 class="font-bold text-indigo-900 text-base flex items-center gap-2">
-          <span>🌙</span> 残り時間・繰り越し確認
-        </h3>
-        <button onclick="closeSleepCalcModal()" class="text-slate-400 hover:text-slate-600 p-1">✕</button>
-      </div>
-
-      <div class="space-y-3">
-        <div class="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 text-center">
-          <div class="text-xs text-indigo-600 font-bold mb-1">今すぐ寝た場合に残るスクリーンタイム</div>
-          <div id="sleepRemainingMinutes" class="text-4xl font-black text-indigo-800">0 分</div>
-        </div>
-
-        <div class="p-4 bg-amber-50 rounded-2xl border border-amber-200">
-          <div class="text-xs text-amber-800 font-bold mb-1 flex items-center gap-1">
-            <span>✨</span> 明日へそのまま繰り越せる時間
-          </div>
-          <p class="text-xs text-slate-700 leading-relaxed">
-            今すぐスマホをやめて寝ると、明日 <span id="calculatedRolloverVal" class="font-bold text-amber-600 text-sm">0分</span> を貯金してそのまま繰り越せます！
-          </p>
-        </div>
-      </div>
-
-      <button onclick="closeSleepCalcModal()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition">
-        閉じる
-      </button>
-    </div>
-  </div>
 
   <!-- 閲覧用 背景設定モーダル -->
   <div id="customBgModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
