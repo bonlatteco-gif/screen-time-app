@@ -4,20 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>スクリーンタイム獲得</title>
-
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { 
-      getFirestore, 
-      doc, 
-      onSnapshot, 
-      setDoc 
-    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    const firebaseConfig = {
+    const cfg = {
       apiKey: "AIzaSyBsFBb_dO-v9khjooHKO4qCeAw8VV5F8b4",
       authDomain: "screen-time-add.firebaseapp.com",
       projectId: "screen-time-add",
@@ -27,471 +19,278 @@
       measurementId: "G-DB6XHSNX3Q"
     };
 
-    const defaultModes = [
+    const defModes = [
       { id: "weekday", name: "平日", icon: "📅", bgType: "color", bgColor: "#f1f5f9", bgImage: "" },
       { id: "holiday", name: "休日・特別", icon: "☀️", bgType: "color", bgColor: "#fef3c7", bgImage: "" }
     ];
 
-    const todayDay = new Date().getDay();
-    const initialMode = (todayDay === 0 || todayDay === 6) ? "holiday" : "weekday";
+    const today = new Date().getDay();
+    const initMode = (today === 0 || today === 6) ? "holiday" : "weekday";
 
-    const defaultData = {
-      modes: defaultModes,
+    window.appState = {
+      modes: JSON.parse(JSON.stringify(defModes)),
       items: [
         { id: "item_1", type: "item", text: "宿題を終わらせる", minutes: 30, completed: false, groupId: null, targetModes: ["weekday"] },
         { id: "item_2", type: "item", text: "部屋の片付け", minutes: 15, completed: false, groupId: null, targetModes: ["all"] },
         { id: "item_3", type: "item", text: "読書 20分", minutes: 20, completed: false, groupId: "group_1", targetModes: ["all"] },
         { id: "item_4", type: "item", text: "休日ドリル 2ページ", minutes: 30, completed: false, groupId: null, targetModes: ["holiday"] }
       ],
-      groups: [
-        { id: "group_1", type: "group", name: "選択グループ 1" }
-      ],
+      groups: [{ id: "group_1", type: "group", name: "選択グループ 1" }],
       order: ["item_1", "item_2", "item_4", "group_1"],
       baseTime: "21:30",
       carryOverMinutes: 0,
+      lastResetTimestamp: Date.now(),
+      isAdmin: false, // 閲覧モードはfalse
       isPaused: false,
-      currentMode: initialMode,
-      lastResetTimestamp: new Date().getTime()
+      currentMode: initMode
     };
 
-    window.appState = {
-      modes: JSON.parse(JSON.stringify(defaultModes)),
-      items: JSON.parse(JSON.stringify(defaultData.items)),
-      groups: JSON.parse(JSON.stringify(defaultData.groups)),
-      order: [...defaultData.order],
-      baseTime: "21:30",
-      carryOverMinutes: 0,
-      lastResetTimestamp: new Date().getTime(),
-      isPaused: false,
-      currentMode: initialMode
-    };
-
-    let db = null;
-    let docRef = null;
-
+    let db = null, docRef = null;
     try {
-      const app = initializeApp(firebaseConfig);
+      const app = initializeApp(cfg);
       db = getFirestore(app);
       docRef = doc(db, "screentime", "sharedState");
-    } catch(e) {
-      console.warn("Firebase初期化スキップ、ローカル動作に切り替えます", e);
-    }
+    } catch(e) {}
 
     window.saveState = async function() {
-      const payload = {
-        modes: window.appState.modes,
-        items: window.appState.items,
-        groups: window.appState.groups,
-        order: window.appState.order,
-        baseTime: window.appState.baseTime,
-        carryOverMinutes: window.appState.carryOverMinutes,
-        isPaused: !!window.appState.isPaused,
-        currentMode: window.appState.currentMode || "weekday",
-        lastResetTimestamp: window.appState.lastResetTimestamp,
-        updatedAt: new Date().getTime()
+      const p = {
+        modes: window.appState.modes, items: window.appState.items, groups: window.appState.groups,
+        order: window.appState.order, baseTime: window.appState.baseTime, carryOverMinutes: window.appState.carryOverMinutes,
+        isPaused: !!window.appState.isPaused, currentMode: window.appState.currentMode || "weekday",
+        lastResetTimestamp: window.appState.lastResetTimestamp, updatedAt: Date.now()
       };
-
-      localStorage.setItem("screentime_backup", JSON.stringify(payload));
-
-      if (docRef) {
-        try {
-          await setDoc(docRef, payload, { merge: true });
-        } catch (err) {
-          console.error("Firebaseへの保存エラー:", err);
-        }
-      }
+      localStorage.setItem("screentime_backup", JSON.stringify(p));
+      if (docRef) { try { await setDoc(docRef, p); } catch(err) {} }
     };
 
-    function checkAndResetAt3AM() {
-      const now = new Date();
-      const lastReset = new Date(window.appState.lastResetTimestamp || 0);
+    function isItemInMode(item, mId) {
+      if (window.appState.isAdmin) return true;
+      const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
+      if (targets.includes("all") || targets.includes("both")) return true;
+      return targets.includes(mId);
+    }
 
-      const target3AM = new Date(now);
-      if (now.getHours() < 3) {
-        target3AM.setDate(target3AM.getDate() - 1);
-      }
-      target3AM.setHours(3, 0, 0, 0);
+    function checkReset() {
+      const now = new Date(), last = new Date(window.appState.lastResetTimestamp || 0);
+      const target = new Date(now);
+      if (now.getHours() < 3) target.setDate(target.getDate() - 1);
+      target.setHours(3,0,0,0);
 
-      if (lastReset.getTime() < target3AM.getTime()) {
-        let earnedMinutes = 0;
-        const currentMode = window.appState.currentMode || "weekday";
-        (window.appState.items || []).forEach(item => {
-          if (item.completed && isItemInMode(item, currentMode)) {
-            earnedMinutes += parseInt(item.minutes || 0, 10);
-          }
-        });
-        const currentCarryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
-        const totalEarned = earnedMinutes + currentCarryOver;
+      if (last.getTime() < target.getTime()) {
+        let earned = 0, curM = window.appState.currentMode || "weekday";
+        (window.appState.items || []).forEach(i => { if (i.completed && isItemInMode(i, curM)) earned += parseInt(i.minutes||0, 10); });
+        let total = earned + parseInt(window.appState.carryOverMinutes||0, 10);
 
-        const baseTimeStr = window.appState.baseTime || "21:30";
-        const parts = baseTimeStr.split(":");
-        const startHour = parseInt(parts[0], 10) || 21;
-        const startMinute = parseInt(parts[1], 10) || 30;
-
-        let usedMinutes = 0;
-        if (now.getHours() > startHour || (now.getHours() === startHour && now.getMinutes() >= startMinute) || now.getHours() < 3) {
-          let startTime = new Date(now);
-          if (now.getHours() < 3) {
-            startTime.setDate(startTime.getDate() - 1);
-          }
-          startTime.setHours(startHour, startMinute, 0, 0);
-          usedMinutes = Math.floor((now.getTime() - startTime.getTime()) / (1000 * 60));
+        const [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
+        let used = 0;
+        if (now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3) {
+          let st = new Date(now);
+          if (now.getHours() < 3) st.setDate(st.getDate() - 1);
+          st.setHours(sH, sM, 0, 0);
+          used = Math.floor((now.getTime() - st.getTime()) / 60000);
         }
-
-        const remainingMinutes = Math.max(0, totalEarned - usedMinutes);
-
-        window.appState.carryOverMinutes = remainingMinutes;
-
-        window.appState.items.forEach(item => {
-          item.completed = false;
-        });
+        window.appState.carryOverMinutes = Math.max(0, total - used);
+        window.appState.items.forEach(i => i.completed = false);
         window.appState.lastResetTimestamp = now.getTime();
         window.saveState();
       }
     }
 
-    function isItemInMode(item, modeId) {
-      const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
-      if (targets.includes("all") || targets.includes("both")) return true;
-      return targets.includes(modeId);
-    }
-
-    function loadLocalCache() {
+    function loadLocal() {
       const local = localStorage.getItem("screentime_backup");
       if (local) {
         try {
-          const data = JSON.parse(local);
-          window.appState.modes = data.modes || defaultModes;
-          window.appState.items = data.items || defaultData.items;
-          window.appState.groups = data.groups || defaultData.groups;
-          window.appState.order = data.order || defaultData.order;
-          window.appState.baseTime = data.baseTime || "21:30";
-          window.appState.carryOverMinutes = parseInt(data.carryOverMinutes || 0, 10);
-          window.appState.isPaused = !!data.isPaused;
-          window.appState.currentMode = data.currentMode || initialMode;
-          window.appState.lastResetTimestamp = data.lastResetTimestamp || new Date().getTime();
+          const d = JSON.parse(local);
+          Object.assign(window.appState, d);
         } catch(e) {}
       }
     }
 
     if (docRef) {
-      onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          window.appState.modes = data.modes || defaultModes;
-          window.appState.items = data.items || [];
-          window.appState.groups = data.groups || [];
-          window.appState.order = data.order || [];
-          window.appState.baseTime = data.baseTime || "21:30";
-          window.appState.carryOverMinutes = parseInt(data.carryOverMinutes || 0, 10);
-          window.appState.isPaused = !!data.isPaused;
-          window.appState.currentMode = data.currentMode || initialMode;
-          window.appState.lastResetTimestamp = data.lastResetTimestamp || new Date().getTime();
-        } else {
-          window.saveState();
-        }
-        checkAndResetAt3AM();
+      onSnapshot(docRef, (snap) => {
+        if (snap.exists()) { Object.assign(window.appState, snap.data()); }
+        else { window.saveState(); }
+        checkReset();
         if (window.renderUI) window.renderUI();
-      }, (error) => {
-        console.warn("Firestoreリアルタイム接続エラー。ローカルキャッシュを使用します:", error);
-        loadLocalCache();
-        checkAndResetAt3AM();
-        if (window.renderUI) window.renderUI();
-      });
-    } else {
-      loadLocalCache();
-    }
+      }, () => { loadLocal(); checkReset(); if (window.renderUI) window.renderUI(); });
+    } else { loadLocal(); }
   </script>
-  <style>
-    .bg-custom-fitted {
-      background-size: cover;
-      background-position: center;
-      background-repeat: no-repeat;
-      background-attachment: fixed;
-    }
-  </style>
+  <style>.bg-custom-fitted { background-size: contain; background-position: center; background-repeat: repeat; background-attachment: fixed; background-color: #f1f5f9; }</style>
 </head>
 <body id="appBody" class="text-slate-800 min-h-screen pb-32 select-none transition-all duration-300 bg-custom-fitted">
 
   <header class="bg-gradient-to-r from-blue-600/90 to-indigo-600/90 backdrop-blur-md text-white p-4 shadow-md sticky top-0 z-10">
-    <div class="max-w-md mx-auto flex justify-between items-center relative">
-      <h1 class="text-xl font-bold flex items-center gap-2">
-        <span>⏱️</span> スクリーンタイム獲得
-      </h1>
-      <button onclick="openCustomBgModal()" class="text-xs bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded-full transition flex items-center gap-1">
-        🎨 このモードの背景変更
-      </button>
+    <div class="max-w-md mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold flex items-center gap-2"><span>⏱️</span> スクリーンタイム獲得</h1>
     </div>
   </header>
 
   <main class="max-w-md mx-auto p-4 space-y-4">
+    <!-- 画面最上部：真ん中に配置した通知メッセージ -->
+    <div class="text-center px-1 text-xs">
+      <p id="pauseNotice" class="text-indigo-700 font-bold hidden">※タイマー一時停止中</p>
+      <p id="beforeStartNotice" class="text-indigo-700 font-bold">※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます</p>
+    </div>
 
-    <!-- モード切り替えタブ -->
-    <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
+    <!-- メインのサマリーカード -->
+    <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative space-y-4">
+      <div><span class="text-xs font-bold text-slate-400 tracking-wider uppercase">合計獲得スクリーンタイム</span></div>
 
-    <!-- 獲得時間サマリーカード -->
-    <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative">
-      <div class="flex justify-between items-center mb-1">
-        <span class="text-xs font-bold text-slate-400 tracking-wider uppercase">合計獲得スクリーンタイム</span>
-        <div class="flex gap-1.5">
-          <button id="pauseToggleBtn" onclick="togglePauseTimer()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-2.5 py-1 rounded-full border border-amber-200 transition">
-            ⏸️ 一時停止
-          </button>
-          <button onclick="openSleepCalcModal()" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold px-2.5 py-1 rounded-full border border-indigo-200 transition">
-            🌙 残時間を確認
-          </button>
-        </div>
-      </div>
-
-      <div class="flex justify-center items-baseline my-1 flex-wrap gap-x-2">
+      <div class="flex justify-center items-baseline flex-wrap gap-x-2 my-1">
         <div id="totalMinutesDisplayContainer" class="transition-opacity">
           <span id="totalMinutes" class="text-5xl font-extrabold text-indigo-800">0</span>
           <span class="text-lg font-bold text-slate-700 ml-0.5">分</span>
         </div>
         <span id="calculatedEndTime" class="text-sm font-semibold text-slate-500">（最大 21:30 まで）</span>
       </div>
-      <p id="carryOverBadge" class="text-xs text-indigo-600 font-medium hidden">
-        ※前日からの繰り越し時間（<span id="carryOverValue">0</span>分）を含みます
-      </p>
-      <p id="pauseNotice" class="text-xs text-amber-600 font-bold mt-1 hidden">
-        ※タイマー一時停止中（時間の消費が止まっています）
-      </p>
-      <p id="beforeStartNotice" class="text-xs text-indigo-600 font-bold mt-1 hidden">
-        ※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます
-      </p>
-      <p id="defaultSummaryText" class="text-xs text-slate-400 mt-1">タスクを達成して時間をゲットしよう！</p>
+
+      <p id="carryOverBadge" class="text-xs text-indigo-600 font-bold hidden">※前日からの繰り越し時間（<span id="carryOverValue">0</span>分）を含みます</p>
+
+      <div class="p-5 bg-amber-50/90 rounded-xl border border-amber-200/80 shadow-inner flex items-center justify-center gap-2">
+        <span class="text-lg">✨</span>
+        <p class="text-xs font-bold text-amber-800">今すぐ寝ると明日 <span id="sleepRemainingMinutes" class="text-sm font-extrabold text-amber-600">0分</span> 貯金できます！</p>
+      </div>
+
+      <div class="pt-1">
+        <p class="text-sm font-extrabold text-indigo-600 tracking-wide py-0.5">タスクを達成して時間をゲットしよう！</p>
+      </div>
     </div>
 
-    <!-- リスト表示コンテナ -->
-    <div id="unifiedListContainer" class="space-y-3 min-h-[100px]"></div>
+    <!-- モード変更タブ（白枠の下、タスクの前） -->
+    <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
 
+    <div id="unifiedListContainer" class="space-y-3 min-h-[100px]"></div>
   </main>
 
-  <!-- 残り時間モーダル -->
-  <div id="sleepCalcModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 border border-indigo-100">
-      <div class="flex justify-between items-center border-b pb-2">
-        <h3 class="font-bold text-indigo-900 text-base flex items-center gap-2">
-          <span>🌙</span> 残り時間・繰り越し確認
-        </h3>
-        <button onclick="closeSleepCalcModal()" class="text-slate-400 hover:text-slate-600 p-1">✕</button>
-      </div>
-
-      <div class="space-y-3">
-        <div class="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 text-center">
-          <div class="text-xs text-indigo-600 font-bold mb-1">今すぐ寝た場合に残るスクリーンタイム</div>
-          <div id="sleepRemainingMinutes" class="text-4xl font-black text-indigo-800">0 分</div>
-        </div>
-
-        <div class="p-4 bg-amber-50 rounded-2xl border border-amber-200">
-          <div class="text-xs text-amber-800 font-bold mb-1 flex items-center gap-1">
-            <span>✨</span> 明日へそのまま繰り越せる時間
-          </div>
-          <p class="text-xs text-slate-700 leading-relaxed">
-            今すぐスマホをやめて寝ると、明日 <span id="calculatedRolloverVal" class="font-bold text-amber-600 text-sm">0分</span> を貯金してそのまま繰り越せます！
-          </p>
-        </div>
-      </div>
-
-      <button onclick="closeSleepCalcModal()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition">
-        閉じる
-      </button>
-    </div>
-  </script>
-
-  <!-- 自家用背景設定モーダル -->
-  <div id="customBgModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
-      <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2">
-        <span>🎨</span> <span id="modalModeTitle">現在のモード</span> の背景設定
-      </h3>
-      
-      <div>
-        <label class="block text-xs font-bold text-slate-500 mb-1">背景のタイプ</label>
-        <select id="userBgType" onchange="toggleUserBgInputs()" class="w-full border rounded-lg p-2 text-sm font-bold">
-          <option value="default">🌐 管理者設定（デフォルト）</option>
-          <option value="color">🎨 好きな色に変更</option>
-          <option value="file">📱 スマホの写真・画像を選ぶ</option>
-          <option value="image">🔗 画像URLを指定</option>
-        </select>
-      </div>
-
-      <div id="userBgColorContainer" class="hidden">
-        <label class="block text-xs font-bold text-slate-500 mb-1">色を選択</label>
-        <input type="color" id="userBgColor" value="#f1f5f9" class="h-10 w-full rounded cursor-pointer border p-1">
-      </div>
-
-      <div id="userBgFileContainer" class="hidden">
-        <label class="block text-xs font-bold text-slate-500 mb-1">スマホの写真アルバムから選択</label>
-        <input type="file" id="userBgFileInput" accept="image/*" onchange="handleImageFileSelect(event)" class="w-full border rounded-lg p-2 text-xs">
-        <div id="filePreview" class="mt-2 text-center hidden">
-          <img id="filePreviewImg" class="h-24 mx-auto rounded border shadow-sm object-cover">
-        </div>
-      </div>
-
-      <div id="userBgImageContainer" class="hidden">
-        <label class="block text-xs font-bold text-slate-500 mb-1">画像URL</label>
-        <input type="url" id="userBgImage" placeholder="https://example.com/photo.jpg" class="w-full border rounded-lg p-2 text-sm">
-      </div>
-
-      <div class="flex gap-2 pt-2">
-        <button onclick="closeCustomBgModal()" class="flex-1 bg-slate-200 text-slate-700 text-sm font-bold py-2 rounded-lg">キャンセル</button>
-        <button onclick="saveUserBgSetting()" class="flex-1 bg-indigo-600 text-white text-sm font-bold py-2 rounded-lg">適用する</button>
-      </div>
-    </div>
-  </div>
-
   <script>
-    let tempBase64Image = "";
+    setInterval(updateLive, 1000);
 
-    setInterval(() => {
-      updateLiveCalculations();
-    }, 1000);
+    function getBgMap() { try { return JSON.parse(localStorage.getItem("user_custom_bg_map") || "{}"); } catch(e){ return {}; } }
 
-    function getUserBgMap() {
-      try {
-        return JSON.parse(localStorage.getItem("user_custom_bg_map") || "{}");
-      } catch(e) {
-        return {};
+    window.setMode = (id) => { window.appState.currentMode = id; window.renderUI(); window.saveState(); };
+
+    function calcUsed() {
+      if(window.appState.isPaused) return 0;
+      const now = new Date(), [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
+      if(now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3) {
+        let st = new Date(now); if(now.getHours() < 3) st.setDate(st.getDate() - 1);
+        st.setHours(sH, sM, 0, 0);
+        return Math.floor((now.getTime() - st.getTime()) / 60000);
       }
+      return 0;
     }
-
-    window.openCustomBgModal = function() {
-      const currentModeId = window.appState.currentMode || "weekday";
-      const currentMode = (window.appState.modes || []).find(m => m.id === currentModeId);
+    function isMatch(item, mode) {
+      if(window.appState.isAdmin) return true;
+      const t = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
+      return t.includes("all") || t.includes("both") || t.includes(mode);
+    }
+    function updateLive() {
+      let earned = 0, mode = window.appState.currentMode || "weekday";
+      (window.appState.items || []).forEach(i => { if(i.completed && isMatch(i, mode)) earned += parseInt(i.minutes||0, 10); });
+      let total = earned + parseInt(window.appState.carryOverMinutes||0, 10), rem = Math.max(0, total - calcUsed());
+      document.getElementById("totalMinutes").innerText = rem;
+      document.getElementById("sleepRemainingMinutes").innerText = `${rem}分`;
       
-      const titleEl = document.getElementById("modalModeTitle");
-      if (titleEl) {
-        titleEl.innerText = currentMode ? `${currentMode.icon || ''} ${currentMode.name}` : "モード";
-      }
-
-      const bgMap = getUserBgMap();
-      const savedBg = bgMap[currentModeId] || { type: "default" };
-
-      document.getElementById("userBgType").value = savedBg.type || "default";
-      document.getElementById("userBgColor").value = savedBg.color || "#f1f5f9";
-      document.getElementById("userBgImage").value = savedBg.image || "";
-      tempBase64Image = savedBg.fileData || "";
-
-      if (tempBase64Image) {
-        document.getElementById("filePreviewImg").src = tempBase64Image;
-        document.getElementById("filePreview").classList.remove("hidden");
-      } else {
-        document.getElementById("filePreview").classList.add("hidden");
-      }
-
-      toggleUserBgInputs();
-      document.getElementById("customBgModal").classList.remove("hidden");
-      document.getElementById("customBgModal").classList.add("flex");
-    };
-
-    window.closeCustomBgModal = function() {
-      document.getElementById("customBgModal").classList.add("hidden");
-      document.getElementById("customBgModal").classList.remove("flex");
-    };
-
-    window.toggleUserBgInputs = function() {
-      const type = document.getElementById("userBgType").value;
-      document.getElementById("userBgColorContainer").classList.toggle("hidden", type !== "color");
-      document.getElementById("userBgFileContainer").classList.toggle("hidden", type !== "file");
-      document.getElementById("userBgImageContainer").classList.toggle("hidden", type !== "image");
-    };
-
-    window.handleImageFileSelect = function(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const img = new Image();
-        img.onload = function() {
-          const canvas = document.createElement("canvas");
-          const maxDimension = 1000;
-          let width = img.width;
-          let height = img.height;
-
-          if (width > height) {
-            if (width > maxDimension) {
-              height = Math.round((height * maxDimension) / width);
-              width = maxDimension;
-            }
-          } else {
-            if (height > maxDimension) {
-              width = Math.round((width * maxDimension) / height);
-              height = maxDimension;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, width, height);
-
-          tempBase64Image = canvas.toDataURL("image/jpeg", 0.7);
-
-          document.getElementById("filePreviewImg").src = tempBase64Image;
-          document.getElementById("filePreview").classList.remove("hidden");
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
-    };
-
-    window.saveUserBgSetting = function() {
-      try {
-        const currentModeId = window.appState.currentMode || "weekday";
-        const type = document.getElementById("userBgType").value;
-        const color = document.getElementById("userBgColor").value;
-        const image = document.getElementById("userBgImage").value.trim();
-
-        const bgMap = getUserBgMap();
-        bgMap[currentModeId] = {
-          type,
-          color,
-          image,
-          fileData: tempBase64Image
-        };
-
-        localStorage.setItem("user_custom_bg_map", JSON.stringify(bgMap));
-
-        closeCustomBgModal();
-        applyBodyBackground();
-      } catch (e) {
-        alert("画像のサイズが大きいため保存できませんでした。別の画像を選択してください。");
-      }
-    };
-
-    window.setMode = function(modeId) {
-      window.appState.currentMode = modeId;
-      window.renderUI();
-      if (window.saveState) window.saveState();
-    };
-
-    window.togglePauseTimer = function() {
-      const isCurrentlyPaused = !!window.appState.isPaused;
-      const message = isCurrentlyPaused 
-        ? "タイマーの消費を「再開」しますか？" 
-        : "タイマーの消費を「一時停止」しますか？";
-
-      if (confirm(message)) {
-        window.appState.isPaused = !isCurrentlyPaused;
-        if (window.saveState) window.saveState();
-        updatePauseUI();
-      }
-    };
-
-    function updatePauseUI() {
-      const pauseBtn = document.getElementById("pauseToggleBtn");
+      const now = new Date(), [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
+      const after = now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3;
+      const notice = document.getElementById("beforeStartNotice");
       const pauseNotice = document.getElementById("pauseNotice");
-      const defaultText = document.getElementById("defaultSummaryText");
-      const displayContainer = document.getElementById("totalMinutesDisplayContainer");
-
-      if (!pauseBtn || !pauseNotice || !defaultText || !displayContainer) return;
-
-      if (window.appState.isPaused) {
-        pauseBtn.innerHTML = "▶️ 再開";
-        pauseBtn.className = "text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold px-2.5 py-1 rounded-full border border-emerald-200 transition";
+      document.getElementById("noticeStartTime").innerText = window.appState.baseTime || "21:30";
+      
+      if(window.appState.isPaused) {
         pauseNotice.classList.remove("hidden");
-        defaultText.classList.add("hidden");
-        displayContainer.classList.add
-        
+        notice.classList.add("hidden");
+        document.getElementById("totalMinutesDisplayContainer").classList.add("opacity-50", "animate-pulse");
+      } else {
+        pauseNotice.classList.add("hidden");
+        document.getElementById("totalMinutesDisplayContainer").classList.remove("opacity-50", "animate-pulse");
+        if(!after) notice.classList.remove("hidden"); else notice.classList.add("hidden");
+      }
+      
+      let endM = sH * 60 + sM + rem, eH = Math.floor(endM / 60) % 24, eMin = endM % 60;
+      document.getElementById("calculatedEndTime").innerText = `（最大 ${String(eH).padStart(2,'0')}:${String(eMin).padStart(2,'0')} まで）`;
+    }
+    function applyBg() {
+      const body = document.getElementById("appBody"), mode = window.appState.currentMode || "weekday";
+      const bg = getBgMap()[mode] || { type: "default" };
+      if(bg.type === "color" && bg.color) { body.style.backgroundImage = "none"; body.style.backgroundColor = bg.color; return; }
+      if(bg.type === "file" && bg.fileData) { body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${bg.fileData}')`; body.style.backgroundColor = ""; return; }
+      if(bg.type === "image" && bg.image) { body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${bg.image}')`; body.style.backgroundColor = ""; return; }
+      const mObj = (window.appState.modes || []).find(m => m.id === mode);
+      if(mObj && mObj.bgType === "image" && mObj.bgImage) { body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${mObj.bgImage}')`; body.style.backgroundColor = ""; }
+      else { body.style.backgroundImage = "none"; body.style.backgroundColor = (mObj && mObj.bgColor) ? mObj.bgColor : "#f1f5f9"; }
+    }
+    window.renderUI = function() {
+      applyBg();
+      const tabC = document.getElementById("modeTabsContainer"); tabC.innerHTML = "";
+      (window.appState.modes || []).forEach(m => {
+        const btn = document.createElement("button");
+        btn.onclick = () => setMode(m.id);
+        btn.className = `flex-1 py-2 px-3 rounded-lg transition-all text-center whitespace-nowrap ${m.id === window.appState.currentMode ? "bg-white text-indigo-700 font-extrabold shadow-sm" : "text-slate-600"}`;
+        btn.innerText = `${m.icon||'📌'} ${m.name}`; tabC.appendChild(btn);
+      });
+      
+      const carry = parseInt(window.appState.carryOverMinutes||0, 10), badge = document.getElementById("carryOverBadge");
+      if(carry > 0) { badge.classList.remove("hidden"); document.getElementById("carryOverValue").innerText = carry; } else { badge.classList.add("hidden"); }
+      updateLive(); ensureOrder();
+
+      const container = document.getElementById("unifiedListContainer"); container.innerHTML = "";
+      const curMode = window.appState.currentMode || "weekday";
+      (window.appState.order || []).forEach(id => {
+        if(id.startsWith("group_")) {
+          const g = (window.appState.groups || []).find(gr => gr.id === id);
+          if(g) container.appendChild(createGroupCard(g, curMode));
+        } else {
+          const i = (window.appState.items || []).find(it => it.id === id && !it.groupId);
+          if(i && isMatch(i, curMode)) container.appendChild(createItemCard(i));
+        }
+      });
+    };
+    function ensureOrder() {
+      const valid = [];
+      (window.appState.order || []).forEach(id => {
+        if(id.startsWith("group_")) { if((window.appState.groups||[]).some(g => g.id === id)) valid.push(id); }
+        else { if((window.appState.items||[]).some(i => i.id === id && !i.groupId)) valid.push(id); }
+      });
+      (window.appState.items || []).forEach(i => { if(!i.groupId && !valid.includes(i.id)) valid.push(i.id); });
+      (window.appState.groups || []).forEach(g => { if(!valid.includes(g.id)) valid.push(g.id); });
+      window.appState.order = valid;
+    }
+    function createItemCard(item) {
+      const card = document.createElement("div");
+      card.dataset.id = item.id;
+      card.className = `flex items-center justify-between p-3.5 rounded-xl shadow-sm border transition-all ${item.completed ? 'bg-indigo-50/90 border-indigo-200 ring-1 ring-indigo-300' : 'bg-white/90 border-slate-200 backdrop-blur-sm'}`;
+      const tModes = item.targetModes || ["all"];
+      let bHtml = tModes.includes("all") ? '<span class="bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.5 rounded">共通</span>' : tModes.map(id => {
+        const m = (window.appState.modes||[]).find(x => x.id === id); return `<span class="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded mr-1">${m?m.name:id}</span>`;
+      }).join("");
+
+      card.innerHTML = `
+        <div class="flex items-center gap-3 flex-1 min-w-0 mr-2 cursor-pointer" onclick="toggleCheck('${item.id}')">
+          <input type="checkbox" ${item.completed?'checked':''} class="w-5 h-5 rounded border-slate-300 text-indigo-600 pointer-events-none flex-shrink-0">
+          <div class="flex flex-col min-w-0"><span class="text-sm font-medium text-slate-800 break-words">${item.text}</span><div class="mt-0.5">${bHtml}</div></div>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm">+${item.minutes}分</span>
+        </div>`;
+      return card;
+    }
+    function createGroupCard(group, mode) {
+      const items = (window.appState.items || []).filter(i => i.groupId === group.id && isMatch(i, mode));
+      const wrap = document.createElement("div"); wrap.dataset.id = group.id;
+      wrap.className = "bg-slate-200/70 backdrop-blur-sm rounded-2xl p-3 border border-slate-300/70 space-y-2";
+      wrap.innerHTML = `<div class="flex justify-between items-center px-1 text-slate-600 text-xs font-bold"><span>📌 どれか1つ選択</span></div>`;
+      const inner = document.createElement("div"); inner.className = "space-y-2 group-inner"; inner.dataset.groupId = group.id;
+      items.forEach(i => inner.appendChild(createItemCard(i)));
+      wrap.appendChild(inner); return wrap;
+    }
+    window.toggleCheck = (id) => {
+      const i = (window.appState.items || []).find(x => x.id === id); if(!i) return;
+      i.completed = !i.completed;
+      if(i.completed && i.groupId) window.appState.items.forEach(x => { if(x.groupId === i.groupId && x.id !== id) x.completed = false; });
+      window.renderUI(); window.saveState();
+    };
+    window.addEventListener("DOMContentLoaded", () => { window.renderUI(); });
+  </script>
+</body>
+</html>
