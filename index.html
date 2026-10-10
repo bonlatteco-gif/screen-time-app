@@ -122,6 +122,7 @@
   <header class="bg-gradient-to-r from-blue-600/90 to-indigo-600/90 backdrop-blur-md text-white p-4 shadow-md sticky top-0 z-10">
     <div class="max-w-md mx-auto flex justify-between items-center">
       <h1 class="text-xl font-bold flex items-center gap-2"><span>⏱️</span> スクリーンタイム獲得</h1>
+      <button onclick="openCustomBgModal()" class="text-xs bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-full transition">🎨 背景変更</button>
     </div>
   </header>
 
@@ -134,7 +135,8 @@
 
     <!-- メインのサマリーカード -->
     <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative space-y-4">
-      <div><span class="text-xs font-bold text-slate-400 tracking-wider uppercase">合計獲得スクリーンタイム</span></div>
+      <!-- 文字サイズを少し大きくしました -->
+      <div><span class="text-sm font-bold text-slate-500 tracking-wider uppercase">合計獲得スクリーンタイム</span></div>
 
       <div class="flex justify-center items-baseline flex-wrap gap-x-2 my-1">
         <div id="totalMinutesDisplayContainer" class="transition-opacity">
@@ -162,13 +164,92 @@
     <div id="unifiedListContainer" class="space-y-3 min-h-[100px]"></div>
   </main>
 
+  <!-- 背景設定モーダル -->
+  <div id="customBgModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
+      <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2"><span>🎨</span> <span id="modalModeTitle">モード</span> の背景</h3>
+      <div>
+        <label class="block text-xs font-bold text-slate-500 mb-1">タイプ</label>
+        <select id="userBgType" onchange="toggleUserBgInputs()" class="w-full border rounded-lg p-2 text-sm font-bold">
+          <option value="default">🌐 デフォルト</option>
+          <option value="color">🎨 単色カラー</option>
+          <option value="file">📱 画像ファイル</option>
+          <option value="image">🔗 画像URL</option>
+        </select>
+      </div>
+      <div id="userBgColorContainer" class="hidden"><input type="color" id="userBgColor" value="#f1f5f9" class="h-10 w-full rounded border p-1 cursor-pointer"></div>
+      <div id="userBgFileContainer" class="hidden">
+        <input type="file" id="userBgFileInput" accept="image/*" onchange="handleImageFileSelect(event)" class="w-full border rounded-lg p-2 text-xs">
+        <div id="filePreview" class="mt-2 text-center hidden"><img id="filePreviewImg" class="h-24 mx-auto rounded border object-cover"></div>
+      </div>
+      <div id="userBgImageContainer" class="hidden"><input type="url" id="userBgImage" placeholder="https://..." class="w-full border rounded-lg p-2 text-sm"></div>
+      <div class="flex gap-2 pt-2">
+        <button onclick="closeCustomBgModal()" class="flex-1 bg-slate-200 text-slate-700 text-sm font-bold py-2 rounded-lg">キャンセル</button>
+        <button onclick="saveUserBgSetting()" class="flex-1 bg-indigo-600 text-white text-sm font-bold py-2 rounded-lg">適用する</button>
+      </div>
+    </div>
+  </div>
+
   <script>
+    let tempBase64 = "";
     setInterval(updateLive, 1000);
 
     function getBgMap() { 
       try { return JSON.parse(localStorage.getItem("user_custom_bg_map") || "{}"); } 
       catch(e){ return {}; } 
     }
+
+    window.openCustomBgModal = function() {
+      const mode = window.appState.currentMode || "weekday";
+      const mObj = (window.appState.modes || []).find(m => m.id === mode);
+      document.getElementById("modalModeTitle").innerText = mObj ? `${mObj.icon||''} ${mObj.name}` : "モード";
+      const bgMap = getBgMap(), bg = bgMap[mode] || { type: "default" };
+      document.getElementById("userBgType").value = bg.type || "default";
+      document.getElementById("userBgColor").value = bg.color || "#f1f5f9";
+      document.getElementById("userBgImage").value = bg.image || "";
+      tempBase64 = bg.fileData || "";
+      if(tempBase64) { document.getElementById("filePreviewImg").src = tempBase64; document.getElementById("filePreview").classList.remove("hidden"); }
+      else { document.getElementById("filePreview").classList.add("hidden"); }
+      toggleUserBgInputs();
+      document.getElementById("customBgModal").classList.remove("hidden");
+      document.getElementById("customBgModal").classList.add("flex");
+    };
+    window.closeCustomBgModal = () => { document.getElementById("customBgModal").classList.add("hidden"); document.getElementById("customBgModal").classList.remove("flex"); };
+    window.toggleUserBgInputs = () => {
+      const t = document.getElementById("userBgType").value;
+      document.getElementById("userBgColorContainer").classList.toggle("hidden", t !== "color");
+      document.getElementById("userBgFileContainer").classList.toggle("hidden", t !== "file");
+      document.getElementById("userBgImageContainer").classList.toggle("hidden", t !== "image");
+    };
+    window.handleImageFileSelect = (e) => {
+      const f = e.target.files[0]; if(!f) return;
+      const r = new FileReader();
+      r.onload = (evt) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let w = img.width, h = img.height, max = 1000;
+          if(w > h && w > max) { h = Math.round(h * max / w); w = max; }
+          else if(h >= w && h > max) { w = Math.round(w * max / h); h = max; }
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+          tempBase64 = canvas.toDataURL("image/jpeg", 0.7);
+          document.getElementById("filePreviewImg").src = tempBase64;
+          document.getElementById("filePreview").classList.remove("hidden");
+        };
+        img.src = evt.target.result;
+      };
+      r.readAsDataURL(f);
+    };
+    window.saveUserBgSetting = () => {
+      try {
+        const mode = window.appState.currentMode || "weekday";
+        const map = getBgMap();
+        map[mode] = { type: document.getElementById("userBgType").value, color: document.getElementById("userBgColor").value, image: document.getElementById("userBgImage").value.trim(), fileData: tempBase64 };
+        localStorage.setItem("user_custom_bg_map", JSON.stringify(map));
+        closeCustomBgModal(); applyBg();
+      } catch(e) { alert("画像サイズが大きすぎます"); }
+    };
 
     function applyBg() {
       const body = document.getElementById("appBody");
