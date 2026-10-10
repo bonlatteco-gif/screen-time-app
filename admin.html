@@ -505,5 +505,872 @@
       }
     }
 
-    window.openCustom
-    
+    window.openCustomBgModal = function() {
+      const currentModeId = window.appState.currentMode || "weekday";
+      const currentMode = (window.appState.modes || []).find(m => m.id === currentModeId);
+      
+      const titleEl = document.getElementById("modalModeTitle");
+      if (titleEl) {
+        titleEl.innerText = currentMode ? `${currentMode.icon || ''} ${currentMode.name}` : "モード";
+      }
+
+      const bgMap = getUserBgMap();
+      const savedBg = bgMap[currentModeId] || { type: "default" };
+
+      document.getElementById("userBgType").value = savedBg.type || "default";
+      document.getElementById("userBgColor").value = savedBg.color || "#f1f5f9";
+      document.getElementById("userBgImage").value = savedBg.image || "";
+      tempBase64Image = savedBg.fileData || "";
+
+      if (tempBase64Image) {
+        document.getElementById("filePreviewImg").src = tempBase64Image;
+        document.getElementById("filePreview").classList.remove("hidden");
+      } else {
+        document.getElementById("filePreview").classList.add("hidden");
+      }
+
+      toggleUserBgInputs();
+      document.getElementById("customBgModal").classList.remove("hidden");
+      document.getElementById("customBgModal").classList.add("flex");
+    };
+
+    window.closeCustomBgModal = function() {
+      document.getElementById("customBgModal").classList.add("hidden");
+      document.getElementById("customBgModal").classList.remove("flex");
+    };
+
+    window.toggleUserBgInputs = function() {
+      const type = document.getElementById("userBgType").value;
+      document.getElementById("userBgColorContainer").classList.toggle("hidden", type !== "color");
+      document.getElementById("userBgFileContainer").classList.toggle("hidden", type !== "file");
+      document.getElementById("userBgImageContainer").classList.toggle("hidden", type !== "image");
+    };
+
+    window.handleImageFileSelect = function(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement("canvas");
+          const maxDimension = 1000;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxDimension) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            }
+          } else {
+            if (height > maxDimension) {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+
+          tempBase64Image = canvas.toDataURL("image/jpeg", 0.7);
+
+          document.getElementById("filePreviewImg").src = tempBase64Image;
+          document.getElementById("filePreview").classList.remove("hidden");
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    };
+
+    window.saveUserBgSetting = function() {
+      try {
+        const currentModeId = window.appState.currentMode || "weekday";
+        const type = document.getElementById("userBgType").value;
+        const color = document.getElementById("userBgColor").value;
+        const image = document.getElementById("userBgImage").value.trim();
+
+        const bgMap = getUserBgMap();
+        bgMap[currentModeId] = {
+          type,
+          color,
+          image,
+          fileData: tempBase64Image
+        };
+
+        localStorage.setItem("user_custom_bg_map", JSON.stringify(bgMap));
+
+        closeCustomBgModal();
+        applyBodyBackground();
+      } catch (e) {
+        alert("画像のサイズが大きいため保存できませんでした。別の画像を選択してください。");
+      }
+    };
+
+    window.setMode = function(modeId) {
+      window.appState.currentMode = modeId;
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    window.togglePauseTimer = function() {
+      const isCurrentlyPaused = !!window.appState.isPaused;
+      const message = isCurrentlyPaused 
+        ? "タイマーの消費を「再開」しますか？" 
+        : "タイマーの消費を「一時停止」しますか？";
+
+      if (confirm(message)) {
+        window.appState.isPaused = !isCurrentlyPaused;
+        if (window.saveState) window.saveState();
+        updatePauseUI();
+      }
+    };
+
+    function updatePauseUI() {
+      const pauseBtn = document.getElementById("pauseToggleBtn");
+      const pauseNotice = document.getElementById("pauseNotice");
+      const defaultText = document.getElementById("defaultSummaryText");
+      const displayContainer = document.getElementById("totalMinutesDisplayContainer");
+
+      if (!pauseBtn || !pauseNotice || !defaultText || !displayContainer) return;
+
+      if (window.appState.isPaused) {
+        pauseBtn.innerHTML = "▶️ 再開";
+        pauseBtn.className = "text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold px-4 py-1.5 rounded-full border border-emerald-200 transition shadow-sm";
+        pauseNotice.classList.remove("hidden");
+        defaultText.classList.add("hidden");
+        displayContainer.classList.add("opacity-50", "animate-pulse");
+      } else {
+        pauseBtn.innerHTML = "⏸️ 一時停止";
+        pauseBtn.className = "text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-4 py-1.5 rounded-full border border-amber-200 transition shadow-sm";
+        pauseNotice.classList.add("hidden");
+        defaultText.classList.remove("hidden");
+        displayContainer.classList.remove("opacity-50", "animate-pulse");
+      }
+    }
+
+    window.openSleepCalcModal = function() {
+      calculateSleepAndRollover();
+      document.getElementById("sleepCalcModal").classList.remove("hidden");
+      document.getElementById("sleepCalcModal").classList.add("flex");
+    };
+
+    window.closeSleepCalcModal = function() {
+      document.getElementById("sleepCalcModal").classList.add("hidden");
+      document.getElementById("sleepCalcModal").classList.remove("flex");
+    };
+
+    function calculateUsedMinutes() {
+      const now = new Date();
+      const baseTimeStr = window.appState.baseTime || "21:30";
+      const parts = baseTimeStr.split(":");
+      const startHour = parseInt(parts[0], 10) || 21;
+      const startMinute = parseInt(parts[1], 10) || 30;
+
+      if (window.appState.isPaused) return 0;
+
+      const isAfterStartTime = now.getHours() > startHour || (now.getHours() === startHour && now.getMinutes() >= startMinute);
+      const isBefore3AM = now.getHours() < 3;
+
+      if (isAfterStartTime || isBefore3AM) {
+        let startTime = new Date(now);
+        if (isBefore3AM) startTime.setDate(startTime.getDate() - 1);
+        startTime.setHours(startHour, startMinute, 0, 0);
+
+        const diffSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+        return Math.floor(diffSeconds / 60);
+      } else {
+        return 0;
+      }
+    }
+
+    function isItemInMode(item, modeId) {
+      if (window.appState.isAdmin) return true;
+      const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
+      if (targets.includes("all") || targets.includes("both")) return true;
+      return targets.includes(modeId);
+    }
+
+    function calculateSleepAndRollover() {
+      let earnedMinutes = 0;
+      const currentMode = window.appState.currentMode || "weekday";
+      (window.appState.items || []).forEach(item => {
+        if (item.completed && isItemInMode(item, currentMode)) {
+          earnedMinutes += parseInt(item.minutes || 0, 10);
+        }
+      });
+
+      const carryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
+      const totalEarned = earnedMinutes + carryOver;
+      const usedMinutes = calculateUsedMinutes();
+      const remainingMinutes = Math.max(0, totalEarned - usedMinutes);
+
+      document.getElementById("sleepRemainingMinutes").innerText = `${remainingMinutes} 分`;
+      document.getElementById("calculatedRolloverVal").innerText = `${remainingMinutes} 分`;
+    }
+
+    function updateLiveCalculations() {
+      let earnedMinutes = 0;
+      const currentMode = window.appState.currentMode || "weekday";
+      (window.appState.items || []).forEach(item => {
+        if (item.completed && isItemInMode(item, currentMode)) {
+          earnedMinutes += parseInt(item.minutes || 0, 10);
+        }
+      });
+
+      const carryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
+      const totalEarned = earnedMinutes + carryOver;
+      const usedMinutes = calculateUsedMinutes();
+      const remainingMinutes = Math.max(0, totalEarned - usedMinutes);
+
+      const totalEl = document.getElementById("totalMinutes");
+      if (totalEl) totalEl.innerText = remainingMinutes;
+
+      const now = new Date();
+      const baseTimeStr = window.appState.baseTime || "21:30";
+      const parts = baseTimeStr.split(":");
+      const startHour = parseInt(parts[0], 10) || 21;
+      const startMinute = parseInt(parts[1], 10) || 30;
+
+      const isAfterStartTime = now.getHours() > startHour || (now.getHours() === startHour && now.getMinutes() >= startMinute);
+      const isBefore3AM = now.getHours() < 3;
+
+      const noticeEl = document.getElementById("beforeStartNotice");
+      const noticeTimeEl = document.getElementById("noticeStartTime");
+
+      if (noticeEl && noticeTimeEl) {
+        noticeTimeEl.innerText = baseTimeStr;
+        if (!isAfterStartTime && !isBefore3AM && !window.appState.isPaused) {
+          noticeEl.classList.remove("hidden");
+        } else {
+          noticeEl.classList.add("hidden");
+        }
+      }
+
+      calculateEndTime(baseTimeStr, remainingMinutes);
+
+      const modal = document.getElementById("sleepCalcModal");
+      if (modal && !modal.classList.contains("hidden")) {
+        calculateSleepAndRollover();
+      }
+    }
+
+    function applyBodyBackground() {
+      const body = document.getElementById("appBody");
+      if (!body) return;
+
+      const currentModeId = window.appState.currentMode || "weekday";
+      const bgMap = getUserBgMap();
+      const userBg = bgMap[currentModeId] || { type: "default" };
+
+      if (userBg.type === "color" && userBg.color) {
+        body.style.backgroundImage = "none";
+        body.style.backgroundColor = userBg.color;
+        return;
+      } else if (userBg.type === "file" && userBg.fileData) {
+        body.style.backgroundImage = `linear-gradient(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.5)), url('${userBg.fileData}')`;
+        body.style.backgroundColor = "";
+        return;
+      } else if (userBg.type === "image" && userBg.image) {
+        body.style.backgroundImage = `linear-gradient(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.5)), url('${userBg.image}')`;
+        body.style.backgroundColor = "";
+        return;
+      }
+
+      const currentMode = (window.appState.modes || []).find(m => m.id === currentModeId);
+
+      if (currentMode && currentMode.bgType === "image" && currentMode.bgImage) {
+        body.style.backgroundImage = `linear-gradient(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.5)), url('${currentMode.bgImage}')`;
+        body.style.backgroundColor = "";
+      } else {
+        body.style.backgroundImage = "none";
+        body.style.backgroundColor = (currentMode && currentMode.bgColor) ? currentMode.bgColor : "#f1f5f9";
+      }
+    }
+
+    window.renderUI = function() {
+      applyBodyBackground();
+      renderModeTabs();
+
+      const container = document.getElementById("unifiedListContainer");
+      if (!container) return;
+      container.innerHTML = "";
+
+      const currentMode = window.appState.currentMode || "weekday";
+
+      const adminPanel = document.getElementById("adminPanel");
+      const adminBtn = document.getElementById("adminToggleBtn");
+      if (window.appState.isAdmin) {
+        if (adminPanel) adminPanel.classList.remove("hidden");
+        if (adminBtn) {
+          adminBtn.className = "text-xs bg-amber-400 text-slate-900 px-3 py-1.5 rounded-full transition font-bold";
+          adminBtn.innerText = "管理者モードON";
+        }
+
+        const baseInput = document.getElementById("baseTimeInput");
+        const carryInput = document.getElementById("carryOverInput");
+        if (baseInput) baseInput.value = window.appState.baseTime || "21:30";
+        if (carryInput) carryInput.value = window.appState.carryOverMinutes || 0;
+
+        renderAdminModeList();
+      } else {
+        if (adminPanel) adminPanel.classList.add("hidden");
+        if (adminBtn) {
+          adminBtn.className = "text-xs bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full transition";
+          adminBtn.innerText = "管理者モード";
+        }
+      }
+
+      updateDropdowns();
+
+      const carryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
+      const carryOverBadge = document.getElementById("carryOverBadge");
+      if (carryOverBadge) {
+        if (carryOver > 0) {
+          carryOverBadge.classList.remove("hidden");
+          const valEl = document.getElementById("carryOverValue");
+          if (valEl) valEl.innerText = carryOver;
+        } else {
+          carryOverBadge.classList.add("hidden");
+        }
+      }
+
+      updatePauseUI();
+      updateLiveCalculations();
+
+      ensureOrderIntegrity();
+
+      (window.appState.order || []).forEach(id => {
+        if (id.startsWith("group_")) {
+          const group = (window.appState.groups || []).find(g => g.id === id);
+          if (group) {
+            const groupCard = createGroupCard(group, currentMode);
+            if (groupCard) container.appendChild(groupCard);
+          }
+        } else {
+          const item = (window.appState.items || []).find(i => i.id === id && !i.groupId);
+          if (item && isItemInMode(item, currentMode)) {
+            container.appendChild(createItemCard(item));
+          }
+        }
+      });
+
+      initSortable();
+    };
+
+    function renderModeTabs() {
+      const container = document.getElementById("modeTabsContainer");
+      if (!container) return;
+      container.innerHTML = "";
+
+      const modes = window.appState.modes || [];
+      const currentMode = window.appState.currentMode || "weekday";
+
+      modes.forEach(mode => {
+        const btn = document.createElement("button");
+        const isActive = mode.id === currentMode;
+        btn.onclick = () => setMode(mode.id);
+        btn.className = `flex-1 py-2 px-3 rounded-lg transition-all text-center whitespace-nowrap ${
+          isActive 
+            ? "bg-white text-indigo-700 font-extrabold shadow-sm" 
+            : "text-slate-600 hover:text-slate-900"
+        }`;
+        btn.innerText = `${mode.icon || '📌'} ${mode.name}`;
+        container.appendChild(btn);
+      });
+    }
+
+    function renderAdminModeList() {
+      const listEl = document.getElementById("adminModeList");
+      if (!listEl) return;
+      listEl.innerHTML = "";
+
+      (window.appState.modes || []).forEach(mode => {
+        const row = document.createElement("div");
+        row.className = "flex items-center justify-between bg-slate-800/80 p-2 rounded-lg text-xs gap-2";
+        row.innerHTML = `
+          <div class="flex items-center gap-1.5 font-bold">
+            <span>${mode.icon || '📌'}</span>
+            <span>${escapeHtml(mode.name)}</span>
+          </div>
+          <div class="flex gap-1">
+            <button onclick="editMode('${mode.id}')" class="text-slate-400 hover:text-slate-200 p-1">✏️</button>
+            <button onclick="deleteMode('${mode.id}')" class="text-rose-400 hover:text-rose-300 p-1">🗑</button>
+          </div>
+        `;
+        listEl.appendChild(row);
+      });
+    }
+
+    window.addCustomMode = function() {
+      const name = prompt("新しいモードの名前を入力してください（例: 冬休み）:");
+      if (!name || !name.trim()) return;
+      const icon = prompt("絵文字アイコンを設定してください（例: ❄️）:", "❄️") || "📌";
+
+      const newId = "mode_" + Date.now();
+      window.appState.modes.push({ 
+        id: newId, 
+        name: name.trim(), 
+        icon: icon.trim(),
+        bgType: "color",
+        bgColor: "#f1f5f9",
+        bgImage: ""
+      });
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    window.editMode = function(id) {
+      const mode = (window.appState.modes || []).find(m => m.id === id);
+      if (!mode) return;
+
+      const newName = prompt("モード名を変更:", mode.name);
+      if (!newName || !newName.trim()) return;
+      const newIcon = prompt("アイコンを変更:", mode.icon || "📌") || "📌";
+
+      mode.name = newName.trim();
+      mode.icon = newIcon.trim();
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    window.deleteMode = function(id) {
+      if ((window.appState.modes || []).length <= 1) {
+        alert("モードは最低1つ以上必要です。");
+        return;
+      }
+      if (!confirm("このモードを削除しますか？所属するタスクのモード設定が変更されます。")) return;
+
+      window.appState.modes = (window.appState.modes || []).filter(m => m.id !== id);
+      if (window.appState.currentMode === id) {
+        window.appState.currentMode = window.appState.modes[0].id;
+      }
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    function ensureOrderIntegrity() {
+      const validOrder = [];
+
+      (window.appState.order || []).forEach(id => {
+        if (id.startsWith("group_")) {
+          if ((window.appState.groups || []).some(g => g.id === id)) validOrder.push(id);
+        } else {
+          if ((window.appState.items || []).some(i => i.id === id && !i.groupId)) validOrder.push(id);
+        }
+      });
+
+      (window.appState.items || []).forEach(i => {
+        if (!i.groupId && !validOrder.includes(i.id)) {
+          validOrder.push(i.id);
+        }
+      });
+
+      (window.appState.groups || []).forEach(g => {
+        if (!validOrder.includes(g.id)) {
+          validOrder.push(g.id);
+        }
+      });
+
+      window.appState.order = validOrder;
+    }
+
+    function calculateEndTime(baseTimeStr, addMinutes) {
+      if (!baseTimeStr) baseTimeStr = "21:30";
+      const parts = baseTimeStr.split(":");
+      let hours = parseInt(parts[0], 10) || 21;
+      let minutes = parseInt(parts[1], 10) || 30;
+
+      let totalMin = hours * 60 + minutes + addMinutes;
+      let endHours = Math.floor(totalMin / 60) % 24;
+      let endMinutes = totalMin % 60;
+
+      const formattedHours = String(endHours).padStart(2, '0');
+      const formattedMinutes = String(endMinutes).padStart(2, '0');
+
+      const endEl = document.getElementById("calculatedEndTime");
+      if (endEl) endEl.innerText = `（最大 ${formattedHours}:${formattedMinutes} まで）`;
+    }
+
+    function getModeBadges(targetModes) {
+      const targets = targetModes || ["all"];
+      if (targets.includes("all") || targets.includes("both")) {
+        return `<span class="bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.5 rounded">共通</span>`;
+      }
+      return targets.map(mId => {
+        const mode = (window.appState.modes || []).find(m => m.id === mId);
+        const name = mode ? mode.name : mId;
+        return `<span class="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded mr-1">${escapeHtml(name)}</span>`;
+      }).join("");
+    }
+
+    function createItemCard(item) {
+      const card = document.createElement("div");
+      card.dataset.id = item.id;
+      card.dataset.type = "item";
+      
+      card.className = `flex items-center justify-between p-3.5 rounded-xl shadow-sm border transition-all duration-200 ${
+        item.completed 
+          ? 'bg-indigo-50/90 border-indigo-200 ring-1 ring-indigo-300' 
+          : 'bg-white/90 border-slate-200 hover:border-slate-300 backdrop-blur-sm'
+      }`;
+
+      const targetModes = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
+
+      card.innerHTML = `
+        <div class="flex items-center gap-3 flex-1 min-w-0 mr-2 cursor-pointer" onclick="toggleCheck('${item.id}')">
+          <input type="checkbox" ${item.completed ? 'checked' : ''} 
+            class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none flex-shrink-0">
+          
+          <div class="flex flex-col min-w-0">
+            <span class="text-sm font-medium text-slate-800 break-words whitespace-normal min-w-0 leading-snug">
+              ${escapeHtml(item.text)}
+            </span>
+            ${window.appState.isAdmin ? `<div class="mt-0.5">${getModeBadges(targetModes)}</div>` : ''}
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm">
+            +${item.minutes}分
+          </span>
+
+          ${window.appState.isAdmin ? `
+            <button onclick="openEditModal('${item.id}')" class="p-1 text-slate-400 hover:text-slate-600 text-xs">✏️</button>
+            <button onclick="deleteItem('${item.id}')" class="p-1 text-rose-400 hover:text-rose-600 text-xs">🗑</button>
+            <span class="drag-handle cursor-grab text-slate-400 hover:text-slate-600 px-1 text-sm">☰</span>
+          ` : ''}
+        </div>
+      `;
+
+      return card;
+    }
+
+    function createGroupCard(group, mode) {
+      const itemsInGroup = (window.appState.items || []).filter(i => i.groupId === group.id && isItemInMode(i, mode));
+      if (itemsInGroup.length === 0 && !window.appState.isAdmin) return null;
+
+      const groupWrapper = document.createElement("div");
+      groupWrapper.dataset.id = group.id;
+      groupWrapper.dataset.type = "group";
+      groupWrapper.className = "bg-slate-200/70 backdrop-blur-sm rounded-2xl p-3 border border-slate-300/70 space-y-2 group-card";
+
+      const header = document.createElement("div");
+      header.className = "flex justify-between items-center px-1 text-slate-600 text-xs font-bold";
+      header.innerHTML = `
+        <div class="flex items-center gap-1.5">
+          ${window.appState.isAdmin ? `<span class="drag-handle cursor-grab text-slate-400 hover:text-slate-700 text-sm font-extrabold pr-1">⠿</span>` : ''}
+          <span>📌 どれか1つ選択</span>
+        </div>
+        ${window.appState.isAdmin ? `
+          <button onclick="deleteGroup('${group.id}')" class="text-rose-500 hover:text-rose-700 text-xs">
+            グループ削除
+          </button>
+        ` : ''}
+      `;
+      groupWrapper.appendChild(header);
+
+      const groupInnerContainer = document.createElement("div");
+      groupInnerContainer.className = "space-y-2 group-inner-container";
+      groupInnerContainer.dataset.groupId = group.id;
+
+      itemsInGroup.forEach(item => {
+        groupInnerContainer.appendChild(createItemCard(item));
+      });
+
+      groupWrapper.appendChild(groupInnerContainer);
+      return groupWrapper;
+    }
+
+    function escapeHtml(str) {
+      return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    window.toggleCheck = function(id) {
+      const item = (window.appState.items || []).find(i => i.id === id);
+      if (!item) return;
+
+      const newStatus = !item.completed;
+
+      if (newStatus && item.groupId) {
+        window.appState.items.forEach(i => {
+          if (i.groupId === item.groupId) {
+            i.completed = false;
+          }
+        });
+      }
+
+      item.completed = newStatus;
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    window.toggleAdminMode = function() {
+      if (window.appState.isAdmin) {
+        window.appState.isAdmin = false;
+        window.renderUI();
+      } else {
+        const input = prompt("管理者パスワードを入力してください:");
+        if (input === window.appState.adminPassword) {
+          window.appState.isAdmin = true;
+          window.renderUI();
+        } else if (input !== null) {
+          alert("パスワードが違います。");
+        }
+      }
+    };
+
+    window.updateBaseTime = function(val) {
+      if (!val) return;
+      window.appState.baseTime = val;
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    window.updateCarryOver = function(val) {
+      const minutes = parseInt(val, 10) || 0;
+      window.appState.carryOverMinutes = minutes < 0 ? 0 : minutes;
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    window.addItem = function(e) {
+      e.preventDefault();
+      const textInput = document.getElementById("newItemText");
+      const minInput = document.getElementById("newItemMinutes");
+      const modeSelect = document.getElementById("newItemModeSelect");
+      const groupSelect = document.getElementById("newItemGroup");
+
+      const newItemId = "item_" + Date.now().toString();
+      const targetGroupId = groupSelect.value || null;
+
+      const selectedModeVal = modeSelect.value || "all";
+      const targetModes = selectedModeVal === "all" ? ["all"] : [selectedModeVal];
+
+      const newItem = {
+        id: newItemId,
+        type: "item",
+        text: textInput.value.trim(),
+        minutes: parseInt(minInput.value, 10) || 0,
+        completed: false,
+        groupId: targetGroupId,
+        targetModes: targetModes
+      };
+
+      window.appState.items.push(newItem);
+
+      if (!targetGroupId) {
+        window.appState.order.push(newItemId);
+      }
+
+      textInput.value = "";
+      minInput.value = "";
+
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    window.openEditModal = function(id) {
+      const item = (window.appState.items || []).find(i => i.id === id);
+      if (!item) return;
+
+      document.getElementById("editItemId").value = item.id;
+      document.getElementById("editItemText").value = item.text;
+      document.getElementById("editItemMinutes").value = item.minutes;
+
+      const targetModes = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
+      document.getElementById("editItemModeSelect").value = targetModes.includes("all") || targetModes.includes("both") ? "all" : targetModes[0];
+      document.getElementById("editItemGroup").value = item.groupId || "";
+
+      document.getElementById("editModal").classList.remove("hidden");
+      document.getElementById("editModal").classList.add("flex");
+    };
+
+    window.closeEditModal = function() {
+      document.getElementById("editModal").classList.add("hidden");
+      document.getElementById("editModal").classList.remove("flex");
+    };
+
+    window.saveEditItem = function() {
+      const id = document.getElementById("editItemId").value;
+      const item = (window.appState.items || []).find(i => i.id === id);
+      if (!item) return;
+
+      const oldGroupId = item.groupId;
+      const newGroupId = document.getElementById("editItemGroup").value || null;
+
+      const selectedModeVal = document.getElementById("editItemModeSelect").value || "all";
+
+      item.text = document.getElementById("editItemText").value.trim();
+      item.minutes = parseInt(document.getElementById("editItemMinutes").value, 10) || 0;
+      item.targetModes = selectedModeVal === "all" ? ["all"] : [selectedModeVal];
+      item.groupId = newGroupId;
+
+      if (oldGroupId && !newGroupId) {
+        if (!window.appState.order.includes(id)) {
+          window.appState.order.push(id);
+        }
+      } 
+      else if (!oldGroupId && newGroupId) {
+        window.appState.order = window.appState.order.filter(oId => oId !== id);
+      }
+
+      closeEditModal();
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    window.deleteItem = function(id) {
+      if (!confirm("この項目を削除しますか？")) return;
+      window.appState.items = (window.appState.items || []).filter(i => i.id !== id);
+      window.appState.order = (window.appState.order || []).filter(oId => oId !== id);
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    window.addGroup = function() {
+      const count = (window.appState.groups || []).length + 1;
+      const newGroupId = "group_" + Date.now();
+      const newGroup = {
+        id: newGroupId,
+        type: "group",
+        name: `選択グループ ${count}`
+      };
+
+      window.appState.groups.push(newGroup);
+      window.appState.order.push(newGroupId);
+
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    window.deleteGroup = function(groupId) {
+      if (!confirm("グループを削除しますか？所属項目は通常項目に戻ります。")) return;
+
+      window.appState.groups = (window.appState.groups || []).filter(g => g.id !== groupId);
+      window.appState.order = (window.appState.order || []).filter(oId => oId !== groupId);
+
+      (window.appState.items || []).forEach(i => {
+        if (i.groupId === groupId) {
+          i.groupId = null;
+          if (!window.appState.order.includes(i.id)) {
+            window.appState.order.push(i.id);
+          }
+        }
+      });
+
+      window.renderUI();
+      if (window.saveState) window.saveState();
+    };
+
+    window.changePassword = function() {
+      const newPass = prompt("新しい管理者パスワードを入力してください:", window.appState.adminPassword);
+      if (newPass && newPass.trim() !== "") {
+        window.appState.adminPassword = newPass.trim();
+        alert("パスワードを変更しました。");
+        if (window.saveState) window.saveState();
+      }
+    };
+
+    function updateDropdowns() {
+      const groupSelects = [document.getElementById("newItemGroup"), document.getElementById("editItemGroup")];
+      groupSelects.forEach(select => {
+        if (!select) return;
+        const currentVal = select.value;
+        select.innerHTML = '<option value="">(なし / 通常)</option>';
+
+        (window.appState.groups || []).forEach((g, idx) => {
+          const opt = document.createElement("option");
+          opt.value = g.id;
+          opt.innerText = `選択グループ ${idx + 1}`;
+          select.appendChild(opt);
+        });
+
+        select.value = currentVal;
+      });
+
+      const modeSelects = [document.getElementById("newItemModeSelect"), document.getElementById("editItemModeSelect")];
+      modeSelects.forEach(select => {
+        if (!select) return;
+        const currentVal = select.value;
+        select.innerHTML = '<option value="all">✨ 共通（全モード）</option>';
+
+        (window.appState.modes || []).forEach(m => {
+          const opt = document.createElement("option");
+          opt.value = m.id;
+          opt.innerText = `${m.icon || '📌'} ${m.name}`;
+          select.appendChild(opt);
+        });
+
+        select.value = currentVal;
+      });
+    }
+
+    function initSortable() {
+      if (mainSortableInstance) {
+        mainSortableInstance.destroy();
+        mainSortableInstance = null;
+      }
+
+      groupInnerSortableInstances.forEach(inst => inst.destroy());
+      groupInnerSortableInstances = [];
+
+      if (!window.appState.isAdmin) return;
+
+      const mainContainer = document.getElementById("unifiedListContainer");
+      if (mainContainer) {
+        mainSortableInstance = new Sortable(mainContainer, {
+          handle: ".drag-handle",
+          animation: 150,
+          draggable: "> div",
+          onEnd: function() {
+            const children = mainContainer.children;
+            const newOrder = [];
+
+            for (let child of children) {
+              const id = child.dataset.id;
+              if (id) {
+                newOrder.push(id);
+              }
+            }
+
+            window.appState.order = newOrder;
+            if (window.saveState) window.saveState();
+          }
+        });
+      }
+
+      const innerContainers = document.querySelectorAll(".group-inner-container");
+      innerContainers.forEach(container => {
+        const inst = new Sortable(container, {
+          handle: ".drag-handle",
+          animation: 150,
+          onEnd: function() {
+            const groupId = container.dataset.groupId;
+            const itemCards = container.querySelectorAll("[data-id]");
+            
+            const reorderedGroupItems = [];
+            itemCards.forEach(card => {
+              const item = (window.appState.items || []).find(i => i.id === card.dataset.id);
+              if (item) reorderedGroupItems.push(item);
+            });
+
+            const otherItems = (window.appState.items || []).filter(i => i.groupId !== groupId);
+            window.appState.items = [...otherItems, ...reorderedGroupItems];
+
+            if (window.saveState) window.saveState();
+          }
+        });
+        groupInnerSortableInstances.push(inst);
+      });
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      window.renderUI();
+    });
+  </script>
+</body>
+</html>
