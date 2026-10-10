@@ -4,22 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>スクリーンタイム獲得 (管理者)</title>
-
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- SortableJS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
-
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { 
-      getFirestore, 
-      doc, 
-      onSnapshot, 
-      setDoc 
-    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    const firebaseConfig = {
+    const cfg = {
       apiKey: "AIzaSyBsFBb_dO-v9khjooHKO4qCeAw8VV5F8b4",
       authDomain: "screen-time-add.firebaseapp.com",
       projectId: "screen-time-add",
@@ -29,240 +20,129 @@
       measurementId: "G-DB6XHSNX3Q"
     };
 
-    const defaultModes = [
+    const defModes = [
       { id: "weekday", name: "平日", icon: "📅", bgType: "color", bgColor: "#f1f5f9", bgImage: "" },
       { id: "holiday", name: "休日・特別", icon: "☀️", bgType: "color", bgColor: "#fef3c7", bgImage: "" }
     ];
 
-    const todayDay = new Date().getDay();
-    const initialMode = (todayDay === 0 || todayDay === 6) ? "holiday" : "weekday";
+    const today = new Date().getDay();
+    const initMode = (today === 0 || today === 6) ? "holiday" : "weekday";
 
-    const defaultData = {
-      modes: defaultModes,
+    window.appState = {
+      modes: JSON.parse(JSON.stringify(defModes)),
       items: [
         { id: "item_1", type: "item", text: "宿題を終わらせる", minutes: 30, completed: false, groupId: null, targetModes: ["weekday"] },
         { id: "item_2", type: "item", text: "部屋の片付け", minutes: 15, completed: false, groupId: null, targetModes: ["all"] },
         { id: "item_3", type: "item", text: "読書 20分", minutes: 20, completed: false, groupId: "group_1", targetModes: ["all"] },
         { id: "item_4", type: "item", text: "休日ドリル 2ページ", minutes: 30, completed: false, groupId: null, targetModes: ["holiday"] }
       ],
-      groups: [
-        { id: "group_1", type: "group", name: "選択グループ 1" }
-      ],
+      groups: [{ id: "group_1", type: "group", name: "選択グループ 1" }],
       order: ["item_1", "item_2", "item_4", "group_1"],
       baseTime: "21:30",
       carryOverMinutes: 0,
-      isPaused: false,
-      currentMode: initialMode,
-      lastResetTimestamp: new Date().getTime()
-    };
-
-    window.appState = {
-      modes: JSON.parse(JSON.stringify(defaultModes)),
-      items: JSON.parse(JSON.stringify(defaultData.items)),
-      groups: JSON.parse(JSON.stringify(defaultData.groups)),
-      order: [...defaultData.order],
-      baseTime: "21:30",
-      carryOverMinutes: 0,
-      lastResetTimestamp: new Date().getTime(),
+      lastResetTimestamp: Date.now(),
       isAdmin: true,
       isPaused: false,
-      currentMode: initialMode
+      currentMode: initMode
     };
 
-    let db = null;
-    let docRef = null;
-
+    let db = null, docRef = null;
     try {
-      const app = initializeApp(firebaseConfig);
+      const app = initializeApp(cfg);
       db = getFirestore(app);
       docRef = doc(db, "screentime", "sharedState");
-    } catch(e) {
-      console.warn("Firebase初期化スキップ、ローカル動作に切り替えます", e);
-    }
+    } catch(e) {}
 
     window.saveState = async function() {
-      const payload = {
-        modes: window.appState.modes,
-        items: window.appState.items,
-        groups: window.appState.groups,
-        order: window.appState.order,
-        baseTime: window.appState.baseTime,
-        carryOverMinutes: window.appState.carryOverMinutes,
-        isPaused: !!window.appState.isPaused,
-        currentMode: window.appState.currentMode || "weekday",
-        lastResetTimestamp: window.appState.lastResetTimestamp,
-        updatedAt: new Date().getTime()
+      const p = {
+        modes: window.appState.modes, items: window.appState.items, groups: window.appState.groups,
+        order: window.appState.order, baseTime: window.appState.baseTime, carryOverMinutes: window.appState.carryOverMinutes,
+        isPaused: !!window.appState.isPaused, currentMode: window.appState.currentMode || "weekday",
+        lastResetTimestamp: window.appState.lastResetTimestamp, updatedAt: Date.now()
       };
-
-      localStorage.setItem("screentime_backup", JSON.stringify(payload));
-
-      if (docRef) {
-        try {
-          await setDoc(docRef, payload);
-        } catch (err) {
-          console.error("Firebaseへの保存エラー:", err);
-        }
-      }
+      localStorage.setItem("screentime_backup", JSON.stringify(p));
+      if (docRef) { try { await setDoc(docRef, p); } catch(err) {} }
     };
 
-    function isItemInMode(item, modeId) {
+    function isItemInMode(item, mId) {
       if (window.appState.isAdmin) return true;
       const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
       if (targets.includes("all") || targets.includes("both")) return true;
-      return targets.includes(modeId);
+      return targets.includes(mId);
     }
 
-    function checkAndResetAt3AM() {
-      const now = new Date();
-      const lastReset = new Date(window.appState.lastResetTimestamp || 0);
+    function checkReset() {
+      const now = new Date(), last = new Date(window.appState.lastResetTimestamp || 0);
+      const target = new Date(now);
+      if (now.getHours() < 3) target.setDate(target.getDate() - 1);
+      target.setHours(3,0,0,0);
 
-      const target3AM = new Date(now);
-      if (now.getHours() < 3) {
-        target3AM.setDate(target3AM.getDate() - 1);
-      }
-      target3AM.setHours(3, 0, 0, 0);
+      if (last.getTime() < target.getTime()) {
+        let earned = 0, curM = window.appState.currentMode || "weekday";
+        (window.appState.items || []).forEach(i => { if (i.completed && isItemInMode(i, curM)) earned += parseInt(i.minutes||0, 10); });
+        let total = earned + parseInt(window.appState.carryOverMinutes||0, 10);
 
-      if (lastReset.getTime() < target3AM.getTime()) {
-        let earnedMinutes = 0;
-        const currentMode = window.appState.currentMode || "weekday";
-        (window.appState.items || []).forEach(item => {
-          if (item.completed && isItemInMode(item, currentMode)) {
-            earnedMinutes += parseInt(item.minutes || 0, 10);
-          }
-        });
-        const currentCarryOver = parseInt(window.appState.carryOverMinutes || 0, 10);
-        const totalEarned = earnedMinutes + currentCarryOver;
-
-        const baseTimeStr = window.appState.baseTime || "21:30";
-        const parts = baseTimeStr.split(":");
-        const startHour = parseInt(parts[0], 10) || 21;
-        const startMinute = parseInt(parts[1], 10) || 30;
-
-        let usedMinutes = 0;
-        if (now.getHours() > startHour || (now.getHours() === startHour && now.getMinutes() >= startMinute) || now.getHours() < 3) {
-          let startTime = new Date(now);
-          if (now.getHours() < 3) {
-            startTime.setDate(startTime.getDate() - 1);
-          }
-          startTime.setHours(startHour, startMinute, 0, 0);
-          usedMinutes = Math.floor((now.getTime() - startTime.getTime()) / (1000 * 60));
+        const [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
+        let used = 0;
+        if (now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3) {
+          let st = new Date(now);
+          if (now.getHours() < 3) st.setDate(st.getDate() - 1);
+          st.setHours(sH, sM, 0, 0);
+          used = Math.floor((now.getTime() - st.getTime()) / 60000);
         }
-
-        const remainingMinutes = Math.max(0, totalEarned - usedMinutes);
-
-        window.appState.carryOverMinutes = remainingMinutes;
-
-        window.appState.items.forEach(item => {
-          item.completed = false;
-        });
+        window.appState.carryOverMinutes = Math.max(0, total - used);
+        window.appState.items.forEach(i => i.completed = false);
         window.appState.lastResetTimestamp = now.getTime();
         window.saveState();
       }
     }
 
-    function loadLocalCache() {
+    function loadLocal() {
       const local = localStorage.getItem("screentime_backup");
       if (local) {
         try {
-          const data = JSON.parse(local);
-          window.appState.modes = data.modes || defaultModes;
-          window.appState.items = data.items || defaultData.items;
-          window.appState.groups = data.groups || defaultData.groups;
-          window.appState.order = data.order || defaultData.order;
-          window.appState.baseTime = data.baseTime || "21:30";
-          window.appState.carryOverMinutes = parseInt(data.carryOverMinutes || 0, 10);
-          window.appState.isPaused = !!data.isPaused;
-          window.appState.currentMode = data.currentMode || initialMode;
-          window.appState.lastResetTimestamp = data.lastResetTimestamp || new Date().getTime();
+          const d = JSON.parse(local);
+          Object.assign(window.appState, d);
         } catch(e) {}
       }
     }
 
     if (docRef) {
-      onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          window.appState.modes = data.modes || defaultModes;
-          window.appState.items = data.items || [];
-          window.appState.groups = data.groups || [];
-          window.appState.order = data.order || [];
-          window.appState.baseTime = data.baseTime || "21:30";
-          window.appState.carryOverMinutes = parseInt(data.carryOverMinutes || 0, 10);
-          window.appState.isPaused = !!data.isPaused;
-          window.appState.currentMode = data.currentMode || initialMode;
-          window.appState.lastResetTimestamp = data.lastResetTimestamp || new Date().getTime();
-        } else {
-          window.saveState();
-        }
-        checkAndResetAt3AM();
+      onSnapshot(docRef, (snap) => {
+        if (snap.exists()) { Object.assign(window.appState, snap.data()); }
+        else { window.saveState(); }
+        checkReset();
         if (window.renderUI) window.renderUI();
-      }, (error) => {
-        console.warn("Firestoreリアルタイム接続エラー。ローカルキャッシュを使用します:", error);
-        loadLocalCache();
-        checkAndResetAt3AM();
-        if (window.renderUI) window.renderUI();
-      });
-    } else {
-      loadLocalCache();
-    }
+      }, () => { loadLocal(); checkReset(); if (window.renderUI) window.renderUI(); });
+    } else { loadLocal(); }
   </script>
-  <style>
-    .bg-custom-fitted {
-      background-size: contain;
-      background-position: center;
-      background-repeat: repeat;
-      background-attachment: fixed;
-      background-color: #f1f5f9;
-    }
-  </style>
+  <style>.bg-custom-fitted { background-size: contain; background-position: center; background-repeat: repeat; background-attachment: fixed; background-color: #f1f5f9; }</style>
 </head>
 <body id="appBody" class="text-slate-800 min-h-screen pb-32 select-none transition-all duration-300 bg-custom-fitted">
 
   <header class="bg-gradient-to-r from-blue-600/90 to-indigo-600/90 backdrop-blur-md text-white p-4 shadow-md sticky top-0 z-10">
     <div class="max-w-md mx-auto flex justify-between items-center">
-      <h1 class="text-xl font-bold flex items-center gap-2">
-        <span>⏱️</span> 管理者パネル
-      </h1>
-      <div class="flex items-center gap-2">
-        <button onclick="openCustomBgModal()" class="text-xs bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-full transition">
-          🎨 背景変更
-        </button>
-      </div>
+      <h1 class="text-xl font-bold flex items-center gap-2"><span>⏱️</span> 管理者パネル</h1>
+      <button onclick="openCustomBgModal()" class="text-xs bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-full transition">🎨 背景変更</button>
     </div>
   </header>
 
   <main class="max-w-md mx-auto p-4 space-y-4">
-
-    <!-- モード切り替えタブ -->
     <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
 
-    <!-- 獲得時間サマリーカード -->
     <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative space-y-3.5">
-      
-      <!-- 消費開始アナウンス ＆ 一時停止ボタン -->
       <div class="flex justify-between items-center text-xs">
         <div class="space-y-0.5 text-left">
-          <p id="pauseNotice" class="text-amber-600 font-bold hidden">
-            ※タイマー一時停止中
-          </p>
-          <p id="beforeStartNotice" class="text-indigo-600 font-bold hidden">
-            ※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます
-          </p>
+          <p id="pauseNotice" class="text-amber-600 font-bold hidden">※タイマー一時停止中</p>
+          <p id="beforeStartNotice" class="text-indigo-600 font-bold hidden">※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます</p>
         </div>
-        <!-- 一時停止ボタン -->
         <div class="ml-auto">
-          <button id="pauseToggleBtn" onclick="togglePauseTimer()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-3 py-1 rounded-full border border-amber-200 transition shadow-sm">
-            ⏸️ 一時停止
-          </button>
+          <button id="pauseToggleBtn" onclick="togglePauseTimer()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-3 py-1 rounded-full border border-amber-200 transition shadow-sm">⏸️ 一時停止</button>
         </div>
       </div>
 
-      <!-- タイトル -->
-      <div>
-        <span class="text-xs font-bold text-slate-400 tracking-wider uppercase">合計獲得スクリーンタイム</span>
-      </div>
+      <div><span class="text-xs font-bold text-slate-400 tracking-wider uppercase">合計獲得スクリーンタイム</span></div>
 
-      <!-- 時間 ＆ 最大時間 -->
       <div class="flex justify-center items-baseline flex-wrap gap-x-2 my-1">
         <div id="totalMinutesDisplayContainer" class="transition-opacity">
           <span id="totalMinutes" class="text-5xl font-extrabold text-indigo-800">0</span>
@@ -271,52 +151,34 @@
         <span id="calculatedEndTime" class="text-sm font-semibold text-slate-500">（最大 21:30 まで）</span>
       </div>
 
-      <!-- 繰り越し情報 -->
-      <p id="carryOverBadge" class="text-xs text-indigo-600 font-medium hidden">
-        ※前日からの繰り越し時間（<span id="carryOverValue">0</span>分）を含みます
-      </p>
+      <p id="carryOverBadge" class="text-xs text-indigo-600 font-medium hidden">※前日からの繰り越し時間（<span id="carryOverValue">0</span>分）を含みます</p>
 
-      <!-- 今すぐ寝ると貯金できるよバナー -->
       <div class="p-3 bg-amber-50/90 rounded-xl border border-amber-200/80 shadow-inner flex items-center justify-center gap-1.5">
         <span class="text-base">✨</span>
-        <p class="text-xs font-bold text-amber-800">
-          今すぐ寝ると明日 <span id="sleepRemainingMinutes" class="text-sm font-extrabold text-amber-600">0分</span> 貯金できます！
-        </p>
+        <p class="text-xs font-bold text-amber-800">今すぐ寝ると明日 <span id="sleepRemainingMinutes" class="text-sm font-extrabold text-amber-600">0分</span> 貯金できます！</p>
       </div>
 
-      <!-- メインメッセージ（最初の✨を削除） -->
       <div class="pt-1">
-        <p id="defaultSummaryText" class="text-sm font-extrabold text-indigo-600 tracking-wide py-0.5">
-          タスクを達成して時間をゲットしよう！
-        </p>
+        <p class="text-sm font-extrabold text-indigo-600 tracking-wide py-0.5">タスクを達成して時間をゲットしよう！</p>
       </div>
     </div>
 
-    <!-- 管理者パネル -->
-    <div id="adminPanel" class="bg-slate-800/90 backdrop-blur-md text-white rounded-2xl p-4 shadow-lg space-y-4">
-      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
-        <h2 class="text-sm font-bold flex items-center gap-1.5 text-amber-400">
-          ⚙️ 管理者設定
-        </h2>
-      </div>
+    <div class="bg-slate-800/90 backdrop-blur-md text-white rounded-2xl p-4 shadow-lg space-y-4">
+      <h2 class="text-sm font-bold flex items-center gap-1.5 text-amber-400 border-b border-slate-700 pb-2">⚙️ 管理者設定</h2>
 
-      <!-- モード設定セクション -->
       <div class="bg-slate-700/60 p-3 rounded-xl space-y-3">
         <div class="flex justify-between items-center">
-          <h3 class="text-xs font-bold text-amber-300">📁 モード管理（夏休み・冬休み等）</h3>
-          <button onclick="addCustomMode()" class="text-[11px] bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold px-2 py-1 rounded">
-            ＋ 新規モード追加
-          </button>
+          <h3 class="text-xs font-bold text-amber-300">📁 モード管理</h3>
+          <button onclick="addCustomMode()" class="text-[11px] bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold px-2 py-1 rounded">＋ 新規モード追加</button>
         </div>
         <div id="adminModeList" class="space-y-1.5"></div>
       </div>
 
-      <!-- 基本時間 & 繰り越し時間 設定 -->
       <div class="bg-slate-700/60 p-3 rounded-xl space-y-3">
         <h3 class="text-xs font-bold text-amber-300">⏱️ 時間・繰り越し設定</h3>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
-            <label class="block text-xs text-slate-300 mb-1">基本終了（カウント開始）時間</label>
+            <label class="block text-xs text-slate-300 mb-1">カウント開始時間</label>
             <input type="time" id="baseTimeInput" onchange="updateBaseTime(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
           </div>
           <div>
@@ -326,81 +188,55 @@
         </div>
       </div>
 
-      <!-- 新規項目追加フォーム -->
       <form onsubmit="addItem(event)" class="space-y-3">
         <div>
           <label class="block text-xs text-slate-300 mb-1">項目名</label>
-          <input type="text" id="newItemText" placeholder="例: 勉強 30分" required class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none">
+          <input type="text" id="newItemText" placeholder="例: 勉強 30分" required class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none text-slate-900">
         </div>
         <div class="grid grid-cols-3 gap-2">
           <div>
-            <label class="block text-xs text-slate-300 mb-1">獲得分（数字）</label>
+            <label class="block text-xs text-slate-300 mb-1">獲得分</label>
             <input type="number" id="newItemMinutes" placeholder="15" required min="1" class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none">
           </div>
           <div>
-            <label class="block text-xs text-slate-300 mb-1">対象モード</label>
+            <label class="block text-xs text-slate-300 mb-1">モード</label>
             <select id="newItemModeSelect" class="w-full text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none font-bold"></select>
           </div>
           <div>
-            <label class="block text-xs text-slate-300 mb-1">グループ（任意）</label>
-            <select id="newItemGroup" class="w-full text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none">
-              <option value="">(なし / 通常)</option>
-            </select>
+            <label class="block text-xs text-slate-300 mb-1">グループ</label>
+            <select id="newItemGroup" class="w-full text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none text-slate-900"><option value="">(なし)</option></select>
           </div>
         </div>
-        <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-2 rounded-lg text-sm transition">
-          ＋ 項目を追加する
-        </button>
+        <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-2 rounded-lg text-sm transition">＋ 項目を追加する</button>
       </form>
 
-      <!-- グループ管理 -->
       <div class="pt-2 border-t border-slate-700">
-        <button onclick="addGroup()" class="w-full bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg text-slate-200">
-          ＋ 新規選択グループ追加
-        </button>
+        <button onclick="addGroup()" class="w-full bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg text-slate-200">＋ 新規選択グループ追加</button>
       </div>
     </div>
 
-    <!-- リスト表示コンテナ -->
     <div id="unifiedListContainer" class="space-y-3 min-h-[100px]"></div>
-
   </main>
 
-  <!-- 閲覧用 背景設定モーダル -->
+  <!-- 背景設定モーダル -->
   <div id="customBgModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
     <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
-      <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2">
-        <span>🎨</span> <span id="modalModeTitle">現在のモード</span> の背景設定
-      </h3>
-      
+      <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2"><span>🎨</span> <span id="modalModeTitle">モード</span> の背景</h3>
       <div>
-        <label class="block text-xs font-bold text-slate-500 mb-1">背景のタイプ</label>
+        <label class="block text-xs font-bold text-slate-500 mb-1">タイプ</label>
         <select id="userBgType" onchange="toggleUserBgInputs()" class="w-full border rounded-lg p-2 text-sm font-bold">
-          <option value="default">🌐 管理者設定（デフォルト）</option>
-          <option value="color">🎨 好きな色に変更</option>
-          <option value="file">📱 スマホの写真・画像を選ぶ</option>
-          <option value="image">🔗 画像URLを指定</option>
+          <option value="default">🌐 デフォルト</option>
+          <option value="color">🎨 単色カラー</option>
+          <option value="file">📱 画像ファイル</option>
+          <option value="image">🔗 画像URL</option>
         </select>
       </div>
-
-      <div id="userBgColorContainer" class="hidden">
-        <label class="block text-xs font-bold text-slate-500 mb-1">色を選択</label>
-        <input type="color" id="userBgColor" value="#f1f5f9" class="h-10 w-full rounded cursor-pointer border p-1">
-      </div>
-
+      <div id="userBgColorContainer" class="hidden"><input type="color" id="userBgColor" value="#f1f5f9" class="h-10 w-full rounded border p-1 cursor-pointer"></div>
       <div id="userBgFileContainer" class="hidden">
-        <label class="block text-xs font-bold text-slate-500 mb-1">スマホの写真アルバムから選択</label>
         <input type="file" id="userBgFileInput" accept="image/*" onchange="handleImageFileSelect(event)" class="w-full border rounded-lg p-2 text-xs">
-        <div id="filePreview" class="mt-2 text-center hidden">
-          <img id="filePreviewImg" class="h-24 mx-auto rounded border shadow-sm object-cover">
-        </div>
+        <div id="filePreview" class="mt-2 text-center hidden"><img id="filePreviewImg" class="h-24 mx-auto rounded border object-cover"></div>
       </div>
-
-      <div id="userBgImageContainer" class="hidden">
-        <label class="block text-xs font-bold text-slate-500 mb-1">画像URL</label>
-        <input type="url" id="userBgImage" placeholder="https://example.com/photo.jpg" class="w-full border rounded-lg p-2 text-sm">
-      </div>
-
+      <div id="userBgImageContainer" class="hidden"><input type="url" id="userBgImage" placeholder="https://..." class="w-full border rounded-lg p-2 text-sm"></div>
       <div class="flex gap-2 pt-2">
         <button onclick="closeCustomBgModal()" class="flex-1 bg-slate-200 text-slate-700 text-sm font-bold py-2 rounded-lg">キャンセル</button>
         <button onclick="saveUserBgSetting()" class="flex-1 bg-indigo-600 text-white text-sm font-bold py-2 rounded-lg">適用する</button>
@@ -413,99 +249,127 @@
     <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
       <h3 class="font-bold text-slate-800 text-base border-b pb-2">項目の編集</h3>
       <input type="hidden" id="editItemId">
-      
-      <div>
-        <label class="block text-xs font-bold text-slate-500 mb-1">項目名</label>
-        <input type="text" id="editItemText" class="w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-      </div>
-
+      <div><label class="block text-xs font-bold text-slate-500 mb-1">項目名</label><input type="text" id="editItemText" class="w-full border rounded-lg p-2 text-sm"></div>
       <div class="grid grid-cols-2 gap-2">
-        <div>
-          <label class="block text-xs font-bold text-slate-500 mb-1">獲得時間 (分)</label>
-          <input type="number" id="editItemMinutes" min="1" class="w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-        </div>
-        <div>
-          <label class="block text-xs font-bold text-slate-500 mb-1">対象モード</label>
-          <select id="editItemModeSelect" class="w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"></select>
-        </div>
+        <div><label class="block text-xs font-bold text-slate-500 mb-1">獲得分</label><input type="number" id="editItemMinutes" min="1" class="w-full border rounded-lg p-2 text-sm"></div>
+        <div><label class="block text-xs font-bold text-slate-500 mb-1">モード</label><select id="editItemModeSelect" class="w-full border rounded-lg p-2 text-sm font-bold"></select></div>
       </div>
-
-      <div>
-        <label class="block text-xs font-bold text-slate-500 mb-1">グループ設定</label>
-        <select id="editItemGroup" class="w-full border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-          <option value="">(なし / 通常項目)</option>
-        </select>
-      </div>
-
+      <div><label class="block text-xs font-bold text-slate-500 mb-1">グループ</label><select id="editItemGroup" class="w-full border rounded-lg p-2 text-sm"><option value="">(なし)</option></select></div>
       <div class="flex gap-2 pt-2">
-        <button onclick="closeEditModal()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-bold py-2 rounded-lg">
-          キャンセル
-        </button>
-        <button onclick="saveEditItem()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold py-2 rounded-lg">
-          保存する
-        </button>
+        <button onclick="closeEditModal()" class="flex-1 bg-slate-200 text-slate-700 text-sm font-bold py-2 rounded-lg">キャンセル</button>
+        <button onclick="saveEditItem()" class="flex-1 bg-indigo-600 text-white text-sm font-bold py-2 rounded-lg">保存する</button>
       </div>
     </div>
   </div>
 
   <script>
-    let mainSortableInstance = null;
-    let groupInnerSortableInstances = [];
-    let tempBase64Image = "";
+    let mainSort = null, innerSorts = [], tempBase64 = "";
+    setInterval(updateLive, 1000);
 
-    setInterval(() => {
-      updateLiveCalculations();
-    }, 1000);
-
-    function getUserBgMap() {
-      try {
-        return JSON.parse(localStorage.getItem("user_custom_bg_map") || "{}");
-      } catch(e) {
-        return {};
-      }
-    }
+    function getBgMap() { try { return JSON.parse(localStorage.getItem("user_custom_bg_map") || "{}"); } catch(e){ return {}; } }
 
     window.openCustomBgModal = function() {
-      const currentModeId = window.appState.currentMode || "weekday";
-      const currentMode = (window.appState.modes || []).find(m => m.id === currentModeId);
-      
-      const titleEl = document.getElementById("modalModeTitle");
-      if (titleEl) {
-        titleEl.innerText = currentMode ? `${currentMode.icon || ''} ${currentMode.name}` : "モード";
-      }
-
-      const bgMap = getUserBgMap();
-      const savedBg = bgMap[currentModeId] || { type: "default" };
-
-      document.getElementById("userBgType").value = savedBg.type || "default";
-      document.getElementById("userBgColor").value = savedBg.color || "#f1f5f9";
-      document.getElementById("userBgImage").value = savedBg.image || "";
-      tempBase64Image = savedBg.fileData || "";
-
-      if (tempBase64Image) {
-        document.getElementById("filePreviewImg").src = tempBase64Image;
-        document.getElementById("filePreview").classList.remove("hidden");
-      } else {
-        document.getElementById("filePreview").classList.add("hidden");
-      }
-
+      const mode = window.appState.currentMode || "weekday";
+      const mObj = (window.appState.modes || []).find(m => m.id === mode);
+      document.getElementById("modalModeTitle").innerText = mObj ? `${mObj.icon||''} ${mObj.name}` : "モード";
+      const bgMap = getBgMap(), bg = bgMap[mode] || { type: "default" };
+      document.getElementById("userBgType").value = bg.type || "default";
+      document.getElementById("userBgColor").value = bg.color || "#f1f5f9";
+      document.getElementById("userBgImage").value = bg.image || "";
+      tempBase64 = bg.fileData || "";
+      if(tempBase64) { document.getElementById("filePreviewImg").src = tempBase64; document.getElementById("filePreview").classList.remove("hidden"); }
+      else { document.getElementById("filePreview").classList.add("hidden"); }
       toggleUserBgInputs();
       document.getElementById("customBgModal").classList.remove("hidden");
       document.getElementById("customBgModal").classList.add("flex");
     };
-
-    window.closeCustomBgModal = function() {
-      document.getElementById("customBgModal").classList.add("hidden");
-      document.getElementById("customBgModal").classList.remove("flex");
+    window.closeCustomBgModal = () => { document.getElementById("customBgModal").classList.add("hidden"); document.getElementById("customBgModal").classList.remove("flex"); };
+    window.toggleUserBgInputs = () => {
+      const t = document.getElementById("userBgType").value;
+      document.getElementById("userBgColorContainer").classList.toggle("hidden", t !== "color");
+      document.getElementById("userBgFileContainer").classList.toggle("hidden", t !== "file");
+      document.getElementById("userBgImageContainer").classList.toggle("hidden", t !== "image");
     };
-
-    window.toggleUserBgInputs = function() {
-      const type = document.getElementById("userBgType").value;
-      document.getElementById("userBgColorContainer").classList.toggle("hidden", type !== "color");
-      document.getElementById("userBgFileContainer").classList.toggle("hidden", type !== "file");
-      document.getElementById("userBgImageContainer").classList.toggle("hidden", type !== "image");
+    window.handleImageFileSelect = (e) => {
+      const f = e.target.files[0]; if(!f) return;
+      const r = new FileReader();
+      r.onload = (evt) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let w = img.width, h = img.height, max = 1000;
+          if(w > h && w > max) { h = Math.round(h * max / w); w = max; }
+          else if(h >= w && h > max) { w = Math.round(w * max / h); h = max; }
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+          tempBase64 = canvas.toDataURL("image/jpeg", 0.7);
+          document.getElementById("filePreviewImg").src = tempBase64;
+          document.getElementById("filePreview").classList.remove("hidden");
+        };
+        img.src = evt.target.result;
+      };
+      r.readAsDataURL(f);
     };
-
-    window.handleImageFileSelect = function(event) {
-      const file = event.target.files[0];
-      if (!file
+    window.saveUserBgSetting = () => {
+      try {
+        const mode = window.appState.currentMode || "weekday";
+        const map = getBgMap();
+        map[mode] = { type: document.getElementById("userBgType").value, color: document.getElementById("userBgColor").value, image: document.getElementById("userBgImage").value.trim(), fileData: tempBase64 };
+        localStorage.setItem("user_custom_bg_map", JSON.stringify(map));
+        closeCustomBgModal(); applyBg();
+      } catch(e) { alert("画像サイズが大きすぎます"); }
+    };
+    window.setMode = (id) => { window.appState.currentMode = id; window.renderUI(); window.saveState(); };
+    window.togglePauseTimer = () => {
+      window.appState.isPaused = !window.appState.isPaused;
+      window.saveState(); updatePauseUI();
+    };
+    function updatePauseUI() {
+      const btn = document.getElementById("pauseToggleBtn"), notice = document.getElementById("pauseNotice"), box = document.getElementById("totalMinutesDisplayContainer");
+      if(!btn) return;
+      if(window.appState.isPaused) {
+        btn.innerHTML = "▶️ 再開"; btn.className = "text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full border border-emerald-200 transition shadow-sm";
+        notice.classList.remove("hidden"); box.classList.add("opacity-50", "animate-pulse");
+      } else {
+        btn.innerHTML = "⏸️ 一時停止"; btn.className = "text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-3 py-1 rounded-full border border-amber-200 transition shadow-sm";
+        notice.classList.add("hidden"); box.classList.remove("opacity-50", "animate-pulse");
+      }
+    }
+    function calcUsed() {
+      if(window.appState.isPaused) return 0;
+      const now = new Date(), [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
+      if(now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3) {
+        let st = new Date(now); if(now.getHours() < 3) st.setDate(st.getDate() - 1);
+        st.setHours(sH, sM, 0, 0);
+        return Math.floor((now.getTime() - st.getTime()) / 60000);
+      }
+      return 0;
+    }
+    function isMatch(item, mode) {
+      if(window.appState.isAdmin) return true;
+      const t = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
+      return t.includes("all") || t.includes("both") || t.includes(mode);
+    }
+    function updateLive() {
+      let earned = 0, mode = window.appState.currentMode || "weekday";
+      (window.appState.items || []).forEach(i => { if(i.completed && isMatch(i, mode)) earned += parseInt(i.minutes||0, 10); });
+      let total = earned + parseInt(window.appState.carryOverMinutes||0, 10), rem = Math.max(0, total - calcUsed());
+      document.getElementById("totalMinutes").innerText = rem;
+      document.getElementById("sleepRemainingMinutes").innerText = `${rem}分`;
+      
+      const now = new Date(), [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
+      const after = now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3;
+      const notice = document.getElementById("beforeStartNotice");
+      document.getElementById("noticeStartTime").innerText = window.appState.baseTime || "21:30";
+      if(!after && !window.appState.isPaused) notice.classList.remove("hidden"); else notice.classList.add("hidden");
+      
+      let endM = sH * 60 + sM + rem, eH = Math.floor(endM / 60) % 24, eMin = endM % 60;
+      document.getElementById("calculatedEndTime").innerText = `（最大 ${String(eH).padStart(2,'0')}:${String(eMin).padStart(2,'0')} まで）`;
+    }
+    function applyBg() {
+      const body = document.getElementById("appBody"), mode = window.appState.currentMode || "weekday";
+      const bg = getBgMap()[mode] || { type: "default" };
+      if(bg.type === "color" && bg.color) { body.style.backgroundImage = "none"; body.style.backgroundColor = bg.color; return; }
+      if(bg.type === "file" && bg.fileData) { body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${bg.fileData}')`; body.style.backgroundColor = ""; return; }
+      if(bg.type === "image" && bg
+         
