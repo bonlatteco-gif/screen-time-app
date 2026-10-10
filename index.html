@@ -64,7 +64,6 @@
     };
 
     function isItemInMode(item, mId) {
-      if (window.appState.isAdmin) return true;
       const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
       if (targets.includes("all") || targets.includes("both")) return true;
       return targets.includes(mId);
@@ -127,15 +126,12 @@
   </header>
 
   <main class="max-w-md mx-auto p-4 space-y-4">
-    <!-- 画面最上部：真ん中に配置した通知メッセージ -->
     <div class="text-center px-1 text-xs">
       <p id="pauseNotice" class="text-indigo-700 font-bold hidden">※タイマー一時停止中</p>
       <p id="beforeStartNotice" class="text-indigo-700 font-bold">※本日 <span id="noticeStartTime">21:30</span> から時間の消費が開始されます</p>
     </div>
 
-    <!-- メインのサマリーカード -->
     <div class="bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-sm border border-slate-200/80 text-center relative space-y-4">
-      <!-- 文字サイズを少し大きくしました -->
       <div><span class="text-sm font-bold text-slate-500 tracking-wider uppercase">合計獲得スクリーンタイム</span></div>
 
       <div class="flex justify-center items-baseline flex-wrap gap-x-2 my-1">
@@ -158,13 +154,11 @@
       </div>
     </div>
 
-    <!-- モード変更タブ（白枠の下、タスクの前） -->
     <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
 
     <div id="unifiedListContainer" class="space-y-3 min-h-[100px]"></div>
   </main>
 
-  <!-- 背景設定モーダル -->
   <div id="customBgModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
     <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
       <h3 class="font-bold text-slate-800 text-base border-b pb-2 flex items-center gap-2"><span>🎨</span> <span id="modalModeTitle">モード</span> の背景</h3>
@@ -299,14 +293,10 @@
       }
       return 0;
     }
-    function isMatch(item, mode) {
-      if(window.appState.isAdmin) return true;
-      const t = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
-      return t.includes("all") || t.includes("both") || t.includes(mode);
-    }
+    
     function updateLive() {
       let earned = 0, mode = window.appState.currentMode || "weekday";
-      (window.appState.items || []).forEach(i => { if(i.completed && isMatch(i, mode)) earned += parseInt(i.minutes||0, 10); });
+      (window.appState.items || []).forEach(i => { if(i.completed && isItemInMode(i, mode)) earned += parseInt(i.minutes||0, 10); });
       let total = earned + parseInt(window.appState.carryOverMinutes||0, 10), rem = Math.max(0, total - calcUsed());
       document.getElementById("totalMinutes").innerText = rem;
       document.getElementById("sleepRemainingMinutes").innerText = `${rem}分`;
@@ -347,13 +337,19 @@
 
       const container = document.getElementById("unifiedListContainer"); container.innerHTML = "";
       const curMode = window.appState.currentMode || "weekday";
+      
       (window.appState.order || []).forEach(id => {
         if(id.startsWith("group_")) {
           const g = (window.appState.groups || []).find(gr => gr.id === id);
-          if(g) container.appendChild(createGroupCard(g, curMode));
+          if(g) {
+            const groupEl = createGroupCard(g, curMode);
+            if(groupEl) container.appendChild(groupEl);
+          }
         } else {
           const i = (window.appState.items || []).find(it => it.id === id && !it.groupId);
-          if(i && isMatch(i, curMode)) container.appendChild(createItemCard(i));
+          if(i && isItemInMode(i, curMode)) {
+            container.appendChild(createItemCard(i));
+          }
         }
       });
     };
@@ -387,7 +383,9 @@
       return card;
     }
     function createGroupCard(group, mode) {
-      const items = (window.appState.items || []).filter(i => i.groupId === group.id && isMatch(i, mode));
+      const items = (window.appState.items || []).filter(i => i.groupId === group.id && isItemInMode(i, mode));
+      if (items.length === 0) return null; // 該当モードの項目がなければグループ自体を表示しない
+      
       const wrap = document.createElement("div"); wrap.dataset.id = group.id;
       wrap.className = "bg-slate-200/70 backdrop-blur-sm rounded-2xl p-3 border border-slate-300/70 space-y-2";
       wrap.innerHTML = `<div class="flex justify-between items-center px-1 text-slate-600 text-xs font-bold"><span>📌 どれか1つ選択</span></div>`;
