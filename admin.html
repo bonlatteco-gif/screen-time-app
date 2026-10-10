@@ -74,8 +74,8 @@
       }
     };
 
+    // 管理者画面でも選択中のモードに合った項目だけを判定するように修正
     window.isMatch = function(item, mode) {
-      if(window.appState.isAdmin) return true;
       const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
       if (targets.includes("all") || targets.includes("both")) return true;
       return targets.includes(mode);
@@ -481,6 +481,7 @@
     }
     function createGroupCard(group, mode) {
       const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode));
+      if (items.length === 0) return null;
       
       const wrap = document.createElement("div"); wrap.dataset.id = group.id;
       wrap.className = "bg-slate-200/70 backdrop-blur-sm rounded-2xl p-3 border border-slate-300/70 space-y-2";
