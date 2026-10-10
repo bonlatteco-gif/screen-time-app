@@ -1,9 +1,3 @@
-エラーログを確認したところ、関数の定義順序のズレによって loadLocal や isMatch が見つからないエラー（Uncaught ReferenceError）が発生していました。
-
-この問題を解決するため、コード内の関数の順番を整理した完全版コードを作成しました。以下のコードをコピーして、GitHubの index.html および admin.html にそれぞれまるごと上書き保存してください。
-
-1. 閲覧モード (index.html) 用の完全版コード
-HTML
 <!DOCTYPE html>
 <html lang="ja">
 <head>
