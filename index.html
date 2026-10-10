@@ -1,3 +1,9 @@
+エラーログを確認したところ、関数の定義順序のズレによって loadLocal や isMatch が見つからないエラー（Uncaught ReferenceError）が発生していました。
+
+この問題を解決するため、コード内の関数の順番を整理した完全版コードを作成しました。以下のコードをコピーして、GitHubの index.html および admin.html にそれぞれまるごと上書き保存してください。
+
+1. 閲覧モード (index.html) 用の完全版コード
+HTML
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -63,7 +69,7 @@
       if (docRef) { try { await setDoc(docRef, p); } catch(err) {} }
     };
 
-    function sanitizeData(data) {
+    window.sanitizeData = function(data) {
       if (data.items) {
         data.items.forEach(i => {
           if (!i.targetModes) {
@@ -71,15 +77,26 @@
           }
         });
       }
-    }
+    };
 
-    function isMatch(item, mode) {
+    window.isMatch = function(item, mode) {
       const targets = item.targetModes || (item.dayType ? [item.dayType] : ["all"]);
       if (targets.includes("all") || targets.includes("both")) return true;
       return targets.includes(mode);
-    }
+    };
 
-    function checkReset() {
+    window.loadLocal = function() {
+      const local = localStorage.getItem("screentime_backup");
+      if (local) {
+        try {
+          const d = JSON.parse(local);
+          window.sanitizeData(d);
+          Object.assign(window.appState, d);
+        } catch(e) {}
+      }
+    };
+
+    window.checkReset = function() {
       const now = new Date(), last = new Date(window.appState.lastResetTimestamp || 0);
       const target = new Date(now);
       if (now.getHours() < 3) target.setDate(target.getDate() - 1);
@@ -87,7 +104,7 @@
 
       if (last.getTime() < target.getTime()) {
         let earned = 0, curM = window.appState.currentMode || "weekday";
-        (window.appState.items || []).forEach(i => { if (i.completed && isMatch(i, curM)) earned += parseInt(i.minutes||0, 10); });
+        (window.appState.items || []).forEach(i => { if (i.completed && window.isMatch(i, curM)) earned += parseInt(i.minutes||0, 10); });
         let total = earned + parseInt(window.appState.carryOverMinutes||0, 10);
 
         const [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
@@ -103,30 +120,19 @@
         window.appState.lastResetTimestamp = now.getTime();
         window.saveState();
       }
-    }
-
-    function loadLocal() {
-      const local = localStorage.getItem("screentime_backup");
-      if (local) {
-        try {
-          const d = JSON.parse(local);
-          sanitizeData(d);
-          Object.assign(window.appState, d);
-        } catch(e) {}
-      }
-    }
+    };
 
     if (docRef) {
       onSnapshot(docRef, (snap) => {
         if (snap.exists()) { 
           const d = snap.data();
-          sanitizeData(d);
+          window.sanitizeData(d);
           Object.assign(window.appState, d); 
         } else { window.saveState(); }
-        checkReset();
+        window.checkReset();
         if (window.renderUI) window.renderUI();
-      }, () => { loadLocal(); checkReset(); if (window.renderUI) window.renderUI(); });
-    } else { loadLocal(); }
+      }, () => { window.loadLocal(); window.checkReset(); if (window.renderUI) window.renderUI(); });
+    } else { window.loadLocal(); }
   </script>
   <style>.bg-custom-fitted { background-size: contain; background-position: center; background-repeat: repeat; background-attachment: fixed; background-color: #f1f5f9; }</style>
 </head>
@@ -310,7 +316,7 @@
     
     function updateLive() {
       let earned = 0, mode = window.appState.currentMode || "weekday";
-      (window.appState.items || []).forEach(i => { if(i.completed && isMatch(i, mode)) earned += parseInt(i.minutes||0, 10); });
+      (window.appState.items || []).forEach(i => { if(i.completed && window.isMatch(i, mode)) earned += parseInt(i.minutes||0, 10); });
       let total = earned + parseInt(window.appState.carryOverMinutes||0, 10), rem = Math.max(0, total - calcUsed());
       document.getElementById("totalMinutes").innerText = rem;
       document.getElementById("sleepRemainingMinutes").innerText = `${rem}分`;
@@ -361,7 +367,7 @@
           }
         } else {
           const i = (window.appState.items || []).find(it => it.id === id && !it.groupId);
-          if(i && isMatch(i, curMode)) {
+          if(i && window.isMatch(i, curMode)) {
             container.appendChild(createItemCard(i));
           }
         }
@@ -397,7 +403,7 @@
       return card;
     }
     function createGroupCard(group, mode) {
-      const items = (window.appState.items || []).filter(i => i.groupId === group.id && isMatch(i, mode));
+      const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode));
       if (items.length === 0) return null;
       
       const wrap = document.createElement("div"); wrap.dataset.id = group.id;
@@ -414,7 +420,7 @@
       window.renderUI(); window.saveState();
     };
     window.addEventListener("DOMContentLoaded", () => { 
-      loadLocal(); 
+      window.loadLocal(); 
       window.renderUI(); 
     });
   </script>
