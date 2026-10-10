@@ -505,25 +505,5 @@
       }
     }
 
-    window.openCustomBgModal = function() {
-      const currentModeId = window.appState.currentMode || "weekday";
-      const currentMode = (window.appState.modes || []).find(m => m.id === currentModeId);
-      
-      const titleEl = document.getElementById("modalModeTitle");
-      if (titleEl) {
-        titleEl.innerText = currentMode ? `${currentMode.icon || ''} ${currentMode.name}` : "モード";
-      }
-
-      const bgMap = getUserBgMap();
-      const savedBg = bgMap[currentModeId] || { type: "default" };
-
-      document.getElementById("userBgType").value = savedBg.type || "default";
-      document.getElementById("userBgColor").value = savedBg.color || "#f1f5f9";
-      document.getElementById("userBgImage").value = savedBg.image || "";
-      tempBase64Image = savedBg.fileData || "";
-
-      if (tempBase64Image) {
-        document.getElementById("filePreviewImg").src = tempBase64Image;
-        document.getElementById("filePreview").classList.remove("hidden");
-      } else {
-        document.getElementById("filePreview").classList.add("hidden
+    window.openCustom
+    
