@@ -39,6 +39,8 @@
       order: ["item_1", "item_2", "item_4", "group_1"],
       baseTime: "21:30",
       carryOverMinutes: 0,
+      pendingCarryOverMinutes: null,
+      displayLimitTimes: { weekday: "21:30", holiday: "21:30" },
       lastResetTimestamp: Date.now(),
       isAdmin: false,
       isPaused: false,
@@ -52,25 +54,53 @@
       docRef = doc(db, "screentime", "sharedState");
     } catch(e) {}
 
+    window.__stateReady = false;
+    window.__saveBlockedNoticeShown = false;
     window.saveState = async function() {
       const p = {
         modes: window.appState.modes, items: window.appState.items, groups: window.appState.groups,
-        order: window.appState.order, baseTime: window.appState.baseTime, carryOverMinutes: window.appState.carryOverMinutes,
+        order: window.appState.order, baseTime: window.appState.baseTime,
+        carryOverMinutes: window.appState.carryOverMinutes,
+        pendingCarryOverMinutes: window.appState.pendingCarryOverMinutes ?? null,
+        displayLimitTimes: window.appState.displayLimitTimes || {},
         isPaused: !!window.appState.isPaused, currentMode: window.appState.currentMode || "weekday",
         lastResetTimestamp: window.appState.lastResetTimestamp, updatedAt: Date.now()
       };
+      if (docRef && !window.__stateReady) {
+        if (!window.__saveBlockedNoticeShown) {
+          window.__saveBlockedNoticeShown = true;
+          alert("保存先のデータを確認できていないため、今回は保存していません。画面を再読み込みして、通信状況を確認してください。");
+        }
+        return false;
+      }
       localStorage.setItem("screentime_backup", JSON.stringify(p));
-      if (docRef) { try { await setDoc(docRef, p); } catch(err) {} }
+      if (docRef) {
+        try {
+          await setDoc(docRef, p);
+          return true;
+        } catch(err) {
+          console.error("保存に失敗しました", err);
+          alert("クラウドへの保存に失敗しました。通信状況を確認してください。");
+          return false;
+        }
+      }
+      return true;
     };
 
     window.sanitizeData = function(data) {
       if (data.items) {
         data.items.forEach(i => {
-          if (!i.targetModes) {
-            i.targetModes = i.dayType ? [i.dayType] : ["all"];
-          }
+          if (!i.targetModes) i.targetModes = i.dayType ? [i.dayType] : ["all"];
+          if (typeof i.minutes !== "number") i.minutes = parseInt(i.minutes || 0, 10);
         });
       }
+      if (!data.displayLimitTimes || typeof data.displayLimitTimes !== "object") {
+        data.displayLimitTimes = {};
+      }
+      (data.modes || defModes).forEach(m => {
+        if (!data.displayLimitTimes[m.id]) data.displayLimitTimes[m.id] = data.baseTime || "21:30";
+      });
+      if (data.pendingCarryOverMinutes === undefined) data.pendingCarryOverMinutes = null;
     };
 
     window.isMatch = function(item, mode) {
@@ -97,19 +127,24 @@
       target.setHours(3,0,0,0);
 
       if (last.getTime() < target.getTime()) {
-        let earned = 0, curM = window.appState.currentMode || "weekday";
-        (window.appState.items || []).forEach(i => { if (i.completed && window.isMatch(i, curM)) earned += parseInt(i.minutes||0, 10); });
-        let total = earned + parseInt(window.appState.carryOverMinutes||0, 10);
-
-        const [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
-        let used = 0;
-        if (now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3) {
-          let st = new Date(now);
-          if (now.getHours() < 3) st.setDate(st.getDate() - 1);
-          st.setHours(sH, sM, 0, 0);
-          used = Math.floor((now.getTime() - st.getTime()) / 60000);
+        if (window.appState.pendingCarryOverMinutes !== null && window.appState.pendingCarryOverMinutes !== undefined) {
+          // 管理者が繰り越しを確定した場合は、その時点で確保した分だけを翌日に渡す
+          window.appState.carryOverMinutes = Math.max(0, parseInt(window.appState.pendingCarryOverMinutes || 0, 10));
+          window.appState.pendingCarryOverMinutes = null;
+        } else {
+          let earned = 0, curM = window.appState.currentMode || "weekday";
+          (window.appState.items || []).forEach(i => { if (i.completed && window.isMatch(i, curM)) earned += parseInt(i.minutes||0, 10); });
+          let total = earned + parseInt(window.appState.carryOverMinutes||0, 10);
+          const [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
+          let used = 0;
+          if (now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3) {
+            let st = new Date(now);
+            if (now.getHours() < 3) st.setDate(st.getDate() - 1);
+            st.setHours(sH, sM, 0, 0);
+            used = Math.floor((now.getTime() - st.getTime()) / 60000);
+          }
+          window.appState.carryOverMinutes = Math.max(0, total - used);
         }
-        window.appState.carryOverMinutes = Math.max(0, total - used);
         window.appState.items.forEach(i => i.completed = false);
         window.appState.lastResetTimestamp = now.getTime();
         window.saveState();
@@ -118,14 +153,25 @@
 
     if (docRef) {
       onSnapshot(docRef, (snap) => {
-        if (snap.exists()) { 
+        if (snap.exists()) {
+          window.__stateReady = true;
           const d = snap.data();
           window.sanitizeData(d);
-          Object.assign(window.appState, d); 
-        } else { window.saveState(); }
+          Object.assign(window.appState, d);
+          localStorage.setItem("screentime_backup", JSON.stringify(d));
+        } else {
+          const local = localStorage.getItem("screentime_backup");
+          if (local) {
+            window.loadLocal();
+            window.__stateReady = true;
+            window.saveState();
+          } else {
+            window.__stateReady = false;
+          }
+        }
         window.checkReset();
         if (window.renderUI) window.renderUI();
-      }, () => { window.loadLocal(); window.checkReset(); if (window.renderUI) window.renderUI(); });
+      }, () => { window.__stateReady = false; window.loadLocal(); window.checkReset(); if (window.renderUI) window.renderUI(); });
     } else { window.loadLocal(); }
   </script>
   <style>.bg-custom-fitted { background-size: contain; background-position: center; background-repeat: repeat; background-attachment: fixed; background-color: #f1f5f9; }</style>
@@ -331,8 +377,8 @@
         if(!after) notice.classList.remove("hidden"); else notice.classList.add("hidden");
       }
       
-      let endM = sH * 60 + sM + rem, eH = Math.floor(endM / 60) % 24, eMin = endM % 60;
-      document.getElementById("calculatedEndTime").innerText = `（最大 ${String(eH).padStart(2,'0')}:${String(eMin).padStart(2,'0')} まで）`;
+      const modeLimit = (window.appState.displayLimitTimes || {})[mode] || window.appState.baseTime || "21:30";
+      document.getElementById("calculatedEndTime").innerText = `（今日の限界時間 ${modeLimit} まで）`;
     }
 
     window.renderUI = function() {
@@ -352,7 +398,12 @@
       const container = document.getElementById("unifiedListContainer"); container.innerHTML = "";
       const curMode = window.appState.currentMode || "weekday";
       
-      (window.appState.order || []).forEach(id => {
+      const visibleOrder = (window.appState.order || []).slice().sort((a, b) => {
+        const ia = (window.appState.items || []).find(x => x.id === a && !x.groupId);
+        const ib = (window.appState.items || []).find(x => x.id === b && !x.groupId);
+        return Number(!!(ia && ia.completed)) - Number(!!(ib && ib.completed));
+      });
+      visibleOrder.forEach(id => {
         if(id.startsWith("group_")) {
           const g = (window.appState.groups || []).find(gr => gr.id === id);
           if(g) {
@@ -389,15 +440,20 @@
       card.innerHTML = `
         <div class="flex items-center gap-3 flex-1 min-w-0 mr-2 cursor-pointer" onclick="toggleCheck('${item.id}')">
           <input type="checkbox" ${item.completed?'checked':''} class="w-5 h-5 rounded border-slate-300 text-indigo-600 pointer-events-none flex-shrink-0">
-          <div class="flex flex-col min-w-0"><span class="text-sm font-medium text-slate-800 break-words">${item.text}</span><div class="mt-0.5">${bHtml}</div></div>
+          <div class="flex flex-col min-w-0">
+            <span class="text-sm font-medium text-slate-800 break-words ${item.completed ? 'line-through text-slate-400' : ''}">${item.text}</span>
+            <div class="mt-0.5 flex flex-wrap items-center gap-1">${bHtml}${item.completed ? '<span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded">✓ チェック済み</span>' : ''}</div>
+          </div>
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
-          <span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm">+${item.minutes}分</span>
+          <span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm">${item.minutes > 0 ? '+' : ''}${item.minutes}分</span>
         </div>`;
       return card;
     }
     function createGroupCard(group, mode) {
-      const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode));
+      const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode))
+        .sort((a, b) => Number(!!a.completed) - Number(!!b.completed));
+      
       if (items.length === 0) return null;
       
       const wrap = document.createElement("div"); wrap.dataset.id = group.id;
