@@ -341,12 +341,7 @@
     <div class="bg-slate-800/90 backdrop-blur-md text-white rounded-2xl p-4 shadow-lg space-y-4">
       <div class="flex items-center justify-between border-b border-slate-700 pb-2 gap-2">
           <h2 class="text-sm font-bold flex items-center gap-1.5 text-amber-400">⚙️ 管理者設定</h2>
-          <div class="flex items-center gap-1">
-            <button id="manualSaveButton" onclick="saveManually()" class="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2.5 py-1.5 rounded-lg">保存</button>
-            <button id="undoButton" onclick="undoLastChange()" class="text-xs bg-slate-600 hover:bg-slate-500 text-white font-bold px-2.5 py-1.5 rounded-lg">↶ 戻す</button>
-          </div>
         </div>
-        <p class="text-[10px] text-slate-300">「保存」を押すと、この端末のブラウザ内に自動バックアップを最大20件保存します（JSON画面は開きません）。</p>
 
       <div class="bg-slate-700/60 p-3 rounded-xl space-y-3">
         <div class="flex justify-between items-center">
@@ -382,6 +377,14 @@
           </div>
           <p class="text-[11px] text-slate-300">繰り越し時に確認が表示され、予約した分は翌日に反映されます。</p>
         </div>
+      </div>
+
+      <div class="border-t border-slate-700 pt-3 space-y-2">
+        <div class="flex gap-2">
+          <button id="manualSaveButton" onclick="saveManually()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-2 rounded-lg text-sm">保存</button>
+          <button id="undoButton" onclick="undoLastChange()" class="bg-slate-600 hover:bg-slate-500 text-white font-bold px-3 py-2 rounded-lg text-sm">↶ 戻す</button>
+        </div>
+        <p class="text-[10px] text-slate-300">「保存」を押すと設定を保存し、この端末のブラウザ内に自動バックアップを最大20件保存します（JSON画面は開きません）。</p>
       </div>
 
       <form onsubmit="addItem(event)" class="space-y-3">
@@ -848,9 +851,20 @@
         s.value = cur;
       });
       [document.getElementById("newItemModeSelect"), document.getElementById("editItemModeSelect")].forEach(s => {
-        if(!s) return; const cur = s.value; s.innerHTML = '<option value="all">✨ 共通（全モード）</option>';
+        if(!s) return;
+        const cur = s.value;
+        s.innerHTML = '<option value="all">✨ 共通（全モード）</option>';
         window.appState.modes.forEach(m => { const opt = document.createElement("option"); opt.value = m.id; opt.innerText = `${m.icon||'📌'} ${m.name}`; s.appendChild(opt); });
-        s.value = cur;
+        const hasCurrent = Array.from(s.options).some(opt => opt.value === cur);
+        if (hasCurrent) {
+          s.value = cur;
+        } else if (s.id === "newItemModeSelect") {
+          // 初回表示時は現在のモードを初期選択し、追加した項目がすぐ見えるようにする
+          const currentMode = window.appState.currentMode || "all";
+          s.value = Array.from(s.options).some(opt => opt.value === currentMode) ? currentMode : "all";
+        } else {
+          s.value = "all";
+        }
       });
     }
     function initSort() {
