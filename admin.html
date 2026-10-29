@@ -58,7 +58,18 @@
     window.__stateReady = false;
     window.__skipUndo = false;
     window.__saveBlockedNoticeShown = false;
-    window.saveState = async function() {
+    // 同じ端末・同じブラウザ内に、手動保存時のバックアップ履歴を最大20件保管
+    window.keepAutomaticBackup = function(snapshot) {
+      try {
+        const list = JSON.parse(localStorage.getItem("screentime_auto_backups") || "[]");
+        list.push({ savedAt: new Date().toISOString(), state: JSON.parse(JSON.stringify(snapshot)) });
+        localStorage.setItem("screentime_auto_backups", JSON.stringify(list.slice(-20)));
+      } catch (e) {
+        console.warn("自動バックアップを保存できませんでした", e);
+      }
+    };
+
+    window.saveState = async function(options = {}) {
       const p = {
         modes: window.appState.modes, items: window.appState.items, groups: window.appState.groups,
         order: window.appState.order, baseTime: window.appState.baseTime,
@@ -77,6 +88,10 @@
         return false;
       }
       const previousRaw = localStorage.getItem("screentime_backup");
+      // 手動保存前に、直前に保存されていた状態をバックアップ履歴へ残す
+      if (options.manualBackup && previousRaw) {
+        try { window.keepAutomaticBackup(JSON.parse(previousRaw)); } catch(e) {}
+      }
       if (previousRaw && !window.__skipUndo) {
         try {
           const previous = JSON.parse(previousRaw);
@@ -97,6 +112,7 @@
       if (docRef) {
         try {
           await setDoc(docRef, p);
+          if (options.manualBackup) window.keepAutomaticBackup(p);
           return true;
         } catch(err) {
           console.error("保存に失敗しました", err);
@@ -104,13 +120,14 @@
           return false;
         }
       }
+      if (options.manualBackup) window.keepAutomaticBackup(p);
       return true;
     };
     window.saveManually = async function() {
       const button = document.getElementById("manualSaveButton");
       const originalText = button ? button.textContent : "保存";
       if (button) { button.disabled = true; button.textContent = "保存中…"; }
-      const ok = await window.saveState();
+      const ok = await window.saveState({ manualBackup: true });
       if (button) {
         button.disabled = false;
         button.textContent = ok ? "保存済み ✓" : originalText;
@@ -192,7 +209,14 @@
     };
 
     window.loadLocal = function() {
-      const local = localStorage.getItem("screentime_backup");
+      let local = localStorage.getItem("screentime_backup");
+      // 通常のローカル保存がない場合は、自動バックアップの最新状態を復元候補にする
+      if (!local) {
+        try {
+          const list = JSON.parse(localStorage.getItem("screentime_auto_backups") || "[]");
+          if (list.length && list[list.length - 1].state) local = JSON.stringify(list[list.length - 1].state);
+        } catch(e) {}
+      }
       if (local) {
         try {
           const d = JSON.parse(local);
@@ -246,7 +270,8 @@
         } else {
           // 保存先が空でも初期値で上書きしない。端末内バックアップがあればそちらを復元する
           const local = localStorage.getItem("screentime_backup");
-          if (local) {
+          const autoBackups = (() => { try { return JSON.parse(localStorage.getItem("screentime_auto_backups") || "[]"); } catch(e) { return []; } })();
+          if (local || autoBackups.length) {
             window.loadLocal();
             window.__stateReady = true;
             window.saveState();
@@ -321,6 +346,7 @@
             <button id="undoButton" onclick="undoLastChange()" class="text-xs bg-slate-600 hover:bg-slate-500 text-white font-bold px-2.5 py-1.5 rounded-lg">↶ 戻す</button>
           </div>
         </div>
+        <p class="text-[10px] text-slate-300">「保存」を押すと、この端末のブラウザ内に自動バックアップを最大20件保存します（JSON画面は開きません）。</p>
 
       <div class="bg-slate-700/60 p-3 rounded-xl space-y-3">
         <div class="flex justify-between items-center">
