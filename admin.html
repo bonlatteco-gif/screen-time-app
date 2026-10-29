@@ -353,15 +353,9 @@
 
       <div class="bg-slate-700/60 p-3 rounded-xl space-y-3">
         <h3 class="text-xs font-bold text-amber-300">⏱️ 時間・繰り越し設定</h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <div>
-            <label class="block text-xs text-slate-300 mb-1">カウント開始時間（計算用）</label>
-            <input type="time" id="baseTimeInput" onchange="updateBaseTime(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
-          </div>
-          <div>
-            <label class="block text-xs text-slate-300 mb-1">翌日へ繰り越す時間（分）</label>
-            <input type="number" id="carryOverInput" min="0" placeholder="0" onchange="updatePendingCarryOver(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
-          </div>
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">カウント開始時間（計算用）</label>
+          <input type="time" id="baseTimeInput" onchange="updateBaseTime(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
         </div>
         <div class="border-t border-slate-600 pt-3 space-y-2">
           <label class="block text-xs text-slate-300 mb-1">子どもに表示する今日の就寝時間（表示のみ）</label>
@@ -578,7 +572,6 @@
         btn.innerText = `${m.icon||'📌'} ${m.name}`; tabC.appendChild(btn);
       });
       document.getElementById("baseTimeInput").value = window.appState.baseTime || "21:30";
-      document.getElementById("carryOverInput").value = window.appState.pendingCarryOverMinutes ?? "";
       const selectedMode = window.appState.currentMode || "weekday";
       window.appState.displayLimitTimes = window.appState.displayLimitTimes || {};
       document.getElementById("displayLimitTimeInput").value = window.appState.displayLimitTimes[selectedMode] || window.appState.baseTime || "21:30";
@@ -725,22 +718,6 @@
       (window.appState.items || []).forEach(i => { if (i.completed && window.isMatch(i, mode)) earned += parseInt(i.minutes || 0, 10); });
       return Math.max(0, earned + parseInt(window.appState.carryOverMinutes || 0, 10) - calcUsed());
     }
-    window.updatePendingCarryOver = (v) => {
-      const amount = Math.max(0, parseInt(v || 0, 10));
-      if (amount <= 0) {
-        window.appState.pendingCarryOverMinutes = null;
-        window.renderUI();
-        window.saveState();
-        return;
-      }
-      if (!confirm(`翌日に${amount}分を繰り越す設定にしますか？`)) {
-        window.renderUI();
-        return;
-      }
-      window.appState.pendingCarryOverMinutes = amount;
-      window.renderUI();
-      window.saveState();
-    };
     window.queueCarryOver = () => {
       const remaining = getCurrentRemainingMinutes();
       if (remaining <= 0) { alert("翌日に繰り越せる残り時間がありません。"); return; }
