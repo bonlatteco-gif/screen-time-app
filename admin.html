@@ -40,6 +40,8 @@
       order: ["item_1", "item_2", "item_4", "group_1"],
       baseTime: "21:30",
       carryOverMinutes: 0,
+      pendingCarryOverMinutes: null,
+      displayLimitTimes: { weekday: "21:30", holiday: "21:30" },
       lastResetTimestamp: Date.now(),
       isAdmin: true,
       isPaused: false,
@@ -53,25 +55,122 @@
       docRef = doc(db, "screentime", "sharedState");
     } catch(e) {}
 
+    window.__stateReady = false;
+    window.__skipUndo = false;
+    window.__saveBlockedNoticeShown = false;
     window.saveState = async function() {
       const p = {
         modes: window.appState.modes, items: window.appState.items, groups: window.appState.groups,
-        order: window.appState.order, baseTime: window.appState.baseTime, carryOverMinutes: window.appState.carryOverMinutes,
+        order: window.appState.order, baseTime: window.appState.baseTime,
+        carryOverMinutes: window.appState.carryOverMinutes,
+        pendingCarryOverMinutes: window.appState.pendingCarryOverMinutes ?? null,
+        displayLimitTimes: window.appState.displayLimitTimes || {},
         isPaused: !!window.appState.isPaused, currentMode: window.appState.currentMode || "weekday",
         lastResetTimestamp: window.appState.lastResetTimestamp, updatedAt: Date.now()
       };
+      // Firestoreの読み込みに成功するまでは、初期データで保存先を上書きしない
+      if (docRef && !window.__stateReady) {
+        if (!window.__saveBlockedNoticeShown) {
+          window.__saveBlockedNoticeShown = true;
+          alert("保存先のデータを確認できていないため、今回は保存していません。画面を再読み込みして、通信状況を確認してください。");
+        }
+        return false;
+      }
+      const previousRaw = localStorage.getItem("screentime_backup");
+      if (previousRaw && !window.__skipUndo) {
+        try {
+          const previous = JSON.parse(previousRaw);
+          const comparable = obj => {
+            const copy = { ...obj };
+            delete copy.updatedAt;
+            return JSON.stringify(copy);
+          };
+          if (comparable(previous) !== comparable(p)) {
+            const history = JSON.parse(localStorage.getItem("screentime_undo_history") || "[]");
+            history.push(previous);
+            localStorage.setItem("screentime_undo_history", JSON.stringify(history.slice(-30)));
+          }
+        } catch(e) {}
+      }
       localStorage.setItem("screentime_backup", JSON.stringify(p));
-      if (docRef) { try { await setDoc(docRef, p); } catch(err) {} }
+      updateUndoButton();
+      if (docRef) {
+        try {
+          await setDoc(docRef, p);
+          return true;
+        } catch(err) {
+          console.error("保存に失敗しました", err);
+          alert("クラウドへの保存に失敗しました。通信状況を確認してください。");
+          return false;
+        }
+      }
+      return true;
+    };
+    window.downloadBackup = function() {
+      const backup = {
+        exportedAt: new Date().toISOString(),
+        appState: {
+          modes: window.appState.modes, items: window.appState.items, groups: window.appState.groups,
+          order: window.appState.order, baseTime: window.appState.baseTime,
+          carryOverMinutes: window.appState.carryOverMinutes,
+          pendingCarryOverMinutes: window.appState.pendingCarryOverMinutes ?? null,
+          displayLimitTimes: window.appState.displayLimitTimes || {},
+          isPaused: !!window.appState.isPaused, currentMode: window.appState.currentMode || "weekday",
+          lastResetTimestamp: window.appState.lastResetTimestamp
+        }
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `screentime_backup_${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+    window.undoLastChange = async function() {
+      const history = JSON.parse(localStorage.getItem("screentime_undo_history") || "[]");
+      if (!history.length) { alert("戻せる操作がありません。"); return; }
+      if (!confirm("直前の変更を1つ戻しますか？")) return;
+      const previous = history.pop();
+      localStorage.setItem("screentime_undo_history", JSON.stringify(history));
+      window.__skipUndo = true;
+      window.sanitizeData(previous);
+      Object.assign(window.appState, previous);
+      await window.saveState();
+      window.__skipUndo = false;
+      if (window.renderUI) window.renderUI();
+      updateUndoButton();
+    };
+    function updateUndoButton() {
+      const btn = document.getElementById("undoButton");
+      if (!btn) return;
+      const history = JSON.parse(localStorage.getItem("screentime_undo_history") || "[]");
+      btn.disabled = history.length === 0;
+      btn.classList.toggle("opacity-40", history.length === 0);
+    }
+    window.initializeDataStore = async function() {
+      if (!confirm("現在表示されている初期設定を保存先に新規保存します。保存先に既存データがないことを確認できた場合のみ実行してください。続けますか？")) return;
+      window.__stateReady = true;
+      const notice = document.getElementById("dataSafetyNotice");
+      if (notice) notice.classList.add("hidden");
+      await window.saveState();
+      updateUndoButton();
     };
 
     window.sanitizeData = function(data) {
       if (data.items) {
         data.items.forEach(i => {
-          if (!i.targetModes) {
-            i.targetModes = i.dayType ? [i.dayType] : ["all"];
-          }
+          if (!i.targetModes) i.targetModes = i.dayType ? [i.dayType] : ["all"];
+          if (typeof i.minutes !== "number") i.minutes = parseInt(i.minutes || 0, 10);
         });
       }
+      if (!data.displayLimitTimes || typeof data.displayLimitTimes !== "object") {
+        data.displayLimitTimes = {};
+      }
+      (data.modes || defModes).forEach(m => {
+        if (!data.displayLimitTimes[m.id]) data.displayLimitTimes[m.id] = data.baseTime || "21:30";
+      });
+      if (data.pendingCarryOverMinutes === undefined) data.pendingCarryOverMinutes = null;
     };
 
     // 管理者画面でも選択中のモードに合った項目だけを判定するように修正
@@ -99,19 +198,24 @@
       target.setHours(3,0,0,0);
 
       if (last.getTime() < target.getTime()) {
-        let earned = 0, curM = window.appState.currentMode || "weekday";
-        (window.appState.items || []).forEach(i => { if (i.completed && window.isMatch(i, curM)) earned += parseInt(i.minutes||0, 10); });
-        let total = earned + parseInt(window.appState.carryOverMinutes||0, 10);
-
-        const [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
-        let used = 0;
-        if (now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3) {
-          let st = new Date(now);
-          if (now.getHours() < 3) st.setDate(st.getDate() - 1);
-          st.setHours(sH, sM, 0, 0);
-          used = Math.floor((now.getTime() - st.getTime()) / 60000);
+        if (window.appState.pendingCarryOverMinutes !== null && window.appState.pendingCarryOverMinutes !== undefined) {
+          // 管理者が繰り越しを確定した場合は、その時点で確保した分だけを翌日に渡す
+          window.appState.carryOverMinutes = Math.max(0, parseInt(window.appState.pendingCarryOverMinutes || 0, 10));
+          window.appState.pendingCarryOverMinutes = null;
+        } else {
+          let earned = 0, curM = window.appState.currentMode || "weekday";
+          (window.appState.items || []).forEach(i => { if (i.completed && window.isMatch(i, curM)) earned += parseInt(i.minutes||0, 10); });
+          let total = earned + parseInt(window.appState.carryOverMinutes||0, 10);
+          const [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
+          let used = 0;
+          if (now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3) {
+            let st = new Date(now);
+            if (now.getHours() < 3) st.setDate(st.getDate() - 1);
+            st.setHours(sH, sM, 0, 0);
+            used = Math.floor((now.getTime() - st.getTime()) / 60000);
+          }
+          window.appState.carryOverMinutes = Math.max(0, total - used);
         }
-        window.appState.carryOverMinutes = Math.max(0, total - used);
         window.appState.items.forEach(i => i.completed = false);
         window.appState.lastResetTimestamp = now.getTime();
         window.saveState();
@@ -120,14 +224,30 @@
 
     if (docRef) {
       onSnapshot(docRef, (snap) => {
-        if (snap.exists()) { 
+        if (snap.exists()) {
+          window.__stateReady = true;
+          const notice = document.getElementById("dataSafetyNotice");
+          if (notice) notice.classList.add("hidden");
           const d = snap.data();
           window.sanitizeData(d);
-          Object.assign(window.appState, d); 
-        } else { window.saveState(); }
+          Object.assign(window.appState, d);
+          localStorage.setItem("screentime_backup", JSON.stringify(d));
+        } else {
+          // 保存先が空でも初期値で上書きしない。端末内バックアップがあればそちらを復元する
+          const local = localStorage.getItem("screentime_backup");
+          if (local) {
+            window.loadLocal();
+            window.__stateReady = true;
+            window.saveState();
+          } else {
+            window.__stateReady = false;
+            const notice = document.getElementById("dataSafetyNotice");
+            if (notice) notice.classList.remove("hidden");
+          }
+        }
         window.checkReset();
         if (window.renderUI) window.renderUI();
-      }, () => { window.loadLocal(); window.checkReset(); if (window.renderUI) window.renderUI(); });
+      }, () => { window.__stateReady = false; window.loadLocal(); window.checkReset(); if (window.renderUI) window.renderUI(); });
     } else { window.loadLocal(); }
   </script>
   <style>.bg-custom-fitted { background-size: contain; background-position: center; background-repeat: repeat; background-attachment: fixed; background-color: #f1f5f9; }</style>
@@ -142,6 +262,11 @@
   </header>
 
   <main class="max-w-md mx-auto p-4 space-y-4">
+    <div id="dataSafetyNotice" class="hidden bg-rose-50 border border-rose-300 text-rose-800 rounded-xl p-3 text-xs space-y-2">
+      <p class="font-bold">保存先のデータが見つかりません。安全のため、自動では初期データを保存していません。</p>
+      <p>以前の設定が残っていないか、Firebase側のデータを確認してから操作してください。</p>
+      <button onclick="initializeDataStore()" class="bg-rose-600 text-white font-bold px-3 py-2 rounded-lg">初期データを保存する（確認後のみ）</button>
+    </div>
     <div class="flex justify-between items-center px-1 text-xs">
       <div>
         <p id="pauseNotice" class="text-indigo-700 font-bold hidden">※タイマー一時停止中</p>
@@ -178,7 +303,13 @@
     <div id="modeTabsContainer" class="bg-slate-200/80 backdrop-blur-sm p-1 rounded-xl flex text-xs font-bold shadow-inner gap-1 overflow-x-auto"></div>
 
     <div class="bg-slate-800/90 backdrop-blur-md text-white rounded-2xl p-4 shadow-lg space-y-4">
-      <h2 class="text-sm font-bold flex items-center gap-1.5 text-amber-400 border-b border-slate-700 pb-2">⚙️ 管理者設定</h2>
+      <div class="flex items-center justify-between border-b border-slate-700 pb-2 gap-2">
+          <h2 class="text-sm font-bold flex items-center gap-1.5 text-amber-400">⚙️ 管理者設定</h2>
+          <div class="flex items-center gap-1">
+            <button onclick="downloadBackup()" class="text-xs bg-slate-600 hover:bg-slate-500 text-white font-bold px-2.5 py-1.5 rounded-lg">↓ 保存</button>
+            <button id="undoButton" onclick="undoLastChange()" class="text-xs bg-slate-600 hover:bg-slate-500 text-white font-bold px-2.5 py-1.5 rounded-lg">↶ 戻す</button>
+          </div>
+        </div>
 
       <div class="bg-slate-700/60 p-3 rounded-xl space-y-3">
         <div class="flex justify-between items-center">
@@ -192,13 +323,27 @@
         <h3 class="text-xs font-bold text-amber-300">⏱️ 時間・繰り越し設定</h3>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
-            <label class="block text-xs text-slate-300 mb-1">カウント開始時間</label>
+            <label class="block text-xs text-slate-300 mb-1">カウント開始時間（計算用）</label>
             <input type="time" id="baseTimeInput" onchange="updateBaseTime(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
           </div>
           <div>
-            <label class="block text-xs text-slate-300 mb-1">現在の繰り越し(分)</label>
-            <input type="number" id="carryOverInput" min="0" placeholder="0" onchange="updateCarryOver(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
+            <label class="block text-xs text-slate-300 mb-1">翌日へ繰り越す時間（分）</label>
+            <input type="number" id="carryOverInput" min="0" placeholder="0" onchange="updatePendingCarryOver(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
           </div>
+        </div>
+        <div class="border-t border-slate-600 pt-3 space-y-2">
+          <label class="block text-xs text-slate-300 mb-1">子どもに表示する今日の限界時間（表示のみ）</label>
+          <input type="time" id="displayLimitTimeInput" onchange="updateDisplayLimitTime(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
+          <p class="text-[11px] text-slate-300">現在選択中のモードに設定されます。獲得時間の計算には影響しません。</p>
+        </div>
+        <div class="border-t border-slate-600 pt-3 space-y-2">
+          <p class="text-[11px] text-slate-300">本日利用中の前日繰り越し：<span id="currentCarryOverValue">0</span>分</p>
+          <div id="carryOverStatus" class="text-xs text-slate-200">繰り越し予約はありません。</div>
+          <div class="flex gap-2">
+            <button onclick="queueCarryOver()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2 rounded-lg">翌日に繰り越す</button>
+            <button onclick="cancelCarryOver()" class="bg-slate-600 hover:bg-slate-500 text-white font-bold text-xs px-3 py-2 rounded-lg">予約取消</button>
+          </div>
+          <p class="text-[11px] text-slate-300">繰り越し時に確認が表示され、予約した分は翌日に反映されます。</p>
         </div>
       </div>
 
@@ -210,7 +355,7 @@
         <div class="grid grid-cols-3 gap-2">
           <div>
             <label class="block text-xs text-slate-300 mb-1">獲得分</label>
-            <input type="number" id="newItemMinutes" placeholder="15" required min="1" class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none">
+            <input type="number" id="newItemMinutes" placeholder="15 / -15" required min="-1440" class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none">
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">モード</label>
@@ -263,7 +408,7 @@
       <input type="hidden" id="editItemId">
       <div><label class="block text-xs font-bold text-slate-500 mb-1">項目名</label><input type="text" id="editItemText" class="w-full border rounded-lg p-2 text-sm"></div>
       <div class="grid grid-cols-2 gap-2">
-        <div><label class="block text-xs font-bold text-slate-500 mb-1">獲得分</label><input type="number" id="editItemMinutes" min="1" class="w-full border rounded-lg p-2 text-sm"></div>
+        <div><label class="block text-xs font-bold text-slate-500 mb-1">獲得分</label><input type="number" id="editItemMinutes" min="-1440" class="w-full border rounded-lg p-2 text-sm"></div>
         <div><label class="block text-xs font-bold text-slate-500 mb-1">モード</label><select id="editItemModeSelect" class="w-full border rounded-lg p-2 text-sm font-bold"></select></div>
       </div>
       <div><label class="block text-xs font-bold text-slate-500 mb-1">グループ</label><select id="editItemGroup" class="w-full border rounded-lg p-2 text-sm"><option value="">(なし)</option></select></div>
@@ -370,8 +515,8 @@
       document.getElementById("noticeStartTime").innerText = window.appState.baseTime || "21:30";
       if(!after && !window.appState.isPaused) notice.classList.remove("hidden"); else notice.classList.add("hidden");
       
-      let endM = sH * 60 + sM + rem, eH = Math.floor(endM / 60) % 24, eMin = endM % 60;
-      document.getElementById("calculatedEndTime").innerText = `（最大 ${String(eH).padStart(2,'0')}:${String(eMin).padStart(2,'0')} まで）`;
+      const modeLimit = (window.appState.displayLimitTimes || {})[mode] || window.appState.baseTime || "21:30";
+      document.getElementById("calculatedEndTime").innerText = `（今日の限界時間 ${modeLimit} まで）`;
     }
     function applyBg() {
       const body = document.getElementById("appBody"), mode = window.appState.currentMode || "weekday";
@@ -393,8 +538,12 @@
         btn.innerText = `${m.icon||'📌'} ${m.name}`; tabC.appendChild(btn);
       });
       document.getElementById("baseTimeInput").value = window.appState.baseTime || "21:30";
-      document.getElementById("carryOverInput").value = window.appState.carryOverMinutes || 0;
+      document.getElementById("carryOverInput").value = window.appState.pendingCarryOverMinutes ?? "";
+      const selectedMode = window.appState.currentMode || "weekday";
+      window.appState.displayLimitTimes = window.appState.displayLimitTimes || {};
+      document.getElementById("displayLimitTimeInput").value = window.appState.displayLimitTimes[selectedMode] || window.appState.baseTime || "21:30";
       renderAdminModes(); updateDropdowns();
+      updateCarryOverStatus(); updateUndoButton();
       
       const carry = parseInt(window.appState.carryOverMinutes||0, 10), badge = document.getElementById("carryOverBadge");
       if(carry > 0) { badge.classList.remove("hidden"); document.getElementById("carryOverValue").innerText = carry; } else { badge.classList.add("hidden"); }
@@ -403,7 +552,12 @@
       const container = document.getElementById("unifiedListContainer"); container.innerHTML = "";
       const curMode = window.appState.currentMode || "weekday";
       
-      (window.appState.order || []).forEach(id => {
+      const visibleOrder = (window.appState.order || []).slice().sort((a, b) => {
+        const ia = (window.appState.items || []).find(x => x.id === a && !x.groupId);
+        const ib = (window.appState.items || []).find(x => x.id === b && !x.groupId);
+        return Number(!!(ia && ia.completed)) - Number(!!(ib && ib.completed));
+      });
+      visibleOrder.forEach(id => {
         if(id.startsWith("group_")) {
           const g = (window.appState.groups || []).find(gr => gr.id === id);
           if(g) {
@@ -419,6 +573,18 @@
       });
       initSort();
     };
+    function updateCarryOverStatus() {
+      const el = document.getElementById("carryOverStatus");
+      if (!el) return;
+      const current = document.getElementById("currentCarryOverValue");
+      if (current) current.innerText = parseInt(window.appState.carryOverMinutes || 0, 10);
+      const pending = window.appState.pendingCarryOverMinutes;
+      if (pending !== null && pending !== undefined) {
+        el.innerText = `翌日への繰り越し予約済み：${pending}分`;
+      } else {
+        el.innerText = "繰り越し予約はありません。";
+      }
+    }
     function renderAdminModes() {
       const list = document.getElementById("adminModeList"); list.innerHTML = "";
       (window.appState.modes || []).forEach(m => {
@@ -469,10 +635,17 @@
       card.innerHTML = `
         <div class="flex items-center gap-3 flex-1 min-w-0 mr-2 cursor-pointer" onclick="toggleCheck('${item.id}')">
           <input type="checkbox" ${item.completed?'checked':''} class="w-5 h-5 rounded border-slate-300 text-indigo-600 pointer-events-none flex-shrink-0">
-          <div class="flex flex-col min-w-0"><span class="text-sm font-medium text-slate-800 break-words">${item.text}</span><div class="mt-0.5">${bHtml}</div></div>
+          <div class="flex flex-col min-w-0">
+            <span class="text-sm font-medium text-slate-800 break-words ${item.completed ? 'line-through text-slate-400' : ''}">${item.text}</span>
+            <div class="mt-0.5 flex flex-wrap items-center gap-1">${bHtml}${item.completed ? '<span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded">✓ チェック済み</span>' : ''}</div>
+          </div>
         </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
-          <span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm">+${item.minutes}分</span>
+        <div class="flex items-center gap-1 flex-shrink-0">
+          <span class="px-2 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm">${item.minutes > 0 ? '+' : ''}${item.minutes}分</span>
+          <div class="flex flex-col">
+            <button onclick="moveItem('${item.id}',-1)" title="上へ" class="px-1 text-slate-500 hover:text-indigo-600 text-xs leading-4">↑</button>
+            <button onclick="moveItem('${item.id}',1)" title="下へ" class="px-1 text-slate-500 hover:text-indigo-600 text-xs leading-4">↓</button>
+          </div>
           <button onclick="openEditModal('${item.id}')" class="p-1 text-slate-400 text-xs">✏️</button>
           <button onclick="deleteItem('${item.id}')" class="p-1 text-rose-400 text-xs">🗑</button>
           <span class="drag-handle cursor-grab text-slate-400 px-1 text-sm">☰</span>
@@ -480,12 +653,13 @@
       return card;
     }
     function createGroupCard(group, mode) {
-      const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode));
+      const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode))
+        .sort((a, b) => Number(!!a.completed) - Number(!!b.completed));
       if (items.length === 0) return null;
       
       const wrap = document.createElement("div"); wrap.dataset.id = group.id;
       wrap.className = "bg-slate-200/70 backdrop-blur-sm rounded-2xl p-3 border border-slate-300/70 space-y-2";
-      wrap.innerHTML = `<div class="flex justify-between items-center px-1 text-slate-600 text-xs font-bold"><div class="flex items-center gap-1.5"><span class="drag-handle cursor-grab text-slate-400 text-sm font-extrabold pr-1">⠿</span><span>📌 どれか1つ選択</span></div><button onclick="deleteGroup('${group.id}')" class="text-rose-500 text-xs">グループ削除</button></div>`;
+      wrap.innerHTML = `<div class="flex justify-between items-center px-1 text-slate-600 text-xs font-bold gap-2"><span>📌 どれか1つ選択</span><div class="flex items-center gap-2"><button onclick="moveGroup('${group.id}',-1)" title="グループを上へ" class="text-slate-500 text-sm px-1">↑</button><button onclick="moveGroup('${group.id}',1)" title="グループを下へ" class="text-slate-500 text-sm px-1">↓</button><button onclick="deleteGroup('${group.id}')" class="text-rose-500 text-xs">グループ削除</button><span class="drag-handle cursor-grab text-slate-400 text-sm font-extrabold px-1">⠿</span></div></div>`;
       const inner = document.createElement("div"); inner.className = "space-y-2 group-inner"; inner.dataset.groupId = group.id;
       items.forEach(i => inner.appendChild(createItemCard(i)));
       wrap.appendChild(inner); return wrap;
@@ -498,6 +672,86 @@
     };
     window.updateBaseTime = (v) => { if(!v) return; window.appState.baseTime = v; window.renderUI(); window.saveState(); };
     window.updateCarryOver = (v) => { window.appState.carryOverMinutes = Math.max(0, parseInt(v||0, 10)); window.renderUI(); window.saveState(); };
+    window.updateDisplayLimitTime = (v) => {
+      if (!v) return;
+      const mode = window.appState.currentMode || "weekday";
+      window.appState.displayLimitTimes = window.appState.displayLimitTimes || {};
+      window.appState.displayLimitTimes[mode] = v;
+      window.renderUI();
+      window.saveState();
+    };
+    function getCurrentRemainingMinutes() {
+      let earned = 0, mode = window.appState.currentMode || "weekday";
+      (window.appState.items || []).forEach(i => { if (i.completed && window.isMatch(i, mode)) earned += parseInt(i.minutes || 0, 10); });
+      return Math.max(0, earned + parseInt(window.appState.carryOverMinutes || 0, 10) - calcUsed());
+    }
+    window.updatePendingCarryOver = (v) => {
+      const amount = Math.max(0, parseInt(v || 0, 10));
+      if (amount <= 0) {
+        window.appState.pendingCarryOverMinutes = null;
+        window.renderUI();
+        window.saveState();
+        return;
+      }
+      if (!confirm(`翌日に${amount}分を繰り越す設定にしますか？`)) {
+        window.renderUI();
+        return;
+      }
+      window.appState.pendingCarryOverMinutes = amount;
+      window.renderUI();
+      window.saveState();
+    };
+    window.queueCarryOver = () => {
+      const remaining = getCurrentRemainingMinutes();
+      if (remaining <= 0) { alert("翌日に繰り越せる残り時間がありません。"); return; }
+      if (window.appState.pendingCarryOverMinutes !== null && window.appState.pendingCarryOverMinutes !== undefined) {
+        alert("すでに繰り越し予約があります。先に予約を取り消してください。");
+        return;
+      }
+      if (!confirm(`残り${remaining}分を翌日のスクリーンタイムに繰り越します。よろしいですか？\n\n※今日の残り時間はそのままで、翌日に反映されます。`)) return;
+      window.appState.pendingCarryOverMinutes = remaining;
+      window.renderUI();
+      window.saveState();
+    };
+    window.cancelCarryOver = () => {
+      if (window.appState.pendingCarryOverMinutes === null || window.appState.pendingCarryOverMinutes === undefined) {
+        alert("取り消せる繰り越し予約がありません。");
+        return;
+      }
+      if (!confirm("翌日への繰り越し予約を取り消しますか？")) return;
+      window.appState.pendingCarryOverMinutes = null;
+      window.renderUI();
+      window.saveState();
+    };
+    window.moveItem = (id, direction) => {
+      const item = (window.appState.items || []).find(x => x.id === id);
+      if (!item) return;
+      if (item.groupId) {
+        const positions = [];
+        window.appState.items.forEach((x, idx) => { if (x.groupId === item.groupId) positions.push(idx); });
+        const ids = positions.map(idx => window.appState.items[idx].id);
+        const at = ids.indexOf(id), to = at + direction;
+        if (to < 0 || to >= ids.length) return;
+        [ids[at], ids[to]] = [ids[to], ids[at]];
+        const replacements = ids.map(xid => window.appState.items.find(x => x.id === xid));
+        positions.forEach((pos, idx) => { window.appState.items[pos] = replacements[idx]; });
+      } else {
+        ensureOrder();
+        const at = window.appState.order.indexOf(id), to = at + direction;
+        if (at < 0 || to < 0 || to >= window.appState.order.length) return;
+        [window.appState.order[at], window.appState.order[to]] = [window.appState.order[to], window.appState.order[at]];
+      }
+      window.renderUI();
+      window.saveState();
+    };
+    window.moveGroup = (id, direction) => {
+      ensureOrder();
+      const at = window.appState.order.indexOf(id), to = at + direction;
+      if (at < 0 || to < 0 || to >= window.appState.order.length) return;
+      [window.appState.order[at], window.appState.order[to]] = [window.appState.order[to], window.appState.order[at]];
+      window.renderUI();
+      window.saveState();
+    };
     window.addItem = (e) => {
       e.preventDefault();
       const text = document.getElementById("newItemText").value.trim(), min = parseInt(document.getElementById("newItemMinutes").value, 10) || 0;
