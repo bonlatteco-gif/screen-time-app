@@ -106,6 +106,17 @@
       }
       return true;
     };
+    window.saveManually = async function() {
+      const button = document.getElementById("manualSaveButton");
+      const originalText = button ? button.textContent : "保存";
+      if (button) { button.disabled = true; button.textContent = "保存中…"; }
+      const ok = await window.saveState();
+      if (button) {
+        button.disabled = false;
+        button.textContent = ok ? "保存済み ✓" : originalText;
+        if (ok) window.setTimeout(() => { if (button) button.textContent = originalText; }, 1800);
+      }
+    };
     window.downloadBackup = function() {
       const backup = {
         exportedAt: new Date().toISOString(),
@@ -306,7 +317,7 @@
       <div class="flex items-center justify-between border-b border-slate-700 pb-2 gap-2">
           <h2 class="text-sm font-bold flex items-center gap-1.5 text-amber-400">⚙️ 管理者設定</h2>
           <div class="flex items-center gap-1">
-            <button onclick="downloadBackup()" class="text-xs bg-slate-600 hover:bg-slate-500 text-white font-bold px-2.5 py-1.5 rounded-lg">↓ 保存</button>
+            <button id="manualSaveButton" onclick="saveManually()" class="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2.5 py-1.5 rounded-lg">保存</button>
             <button id="undoButton" onclick="undoLastChange()" class="text-xs bg-slate-600 hover:bg-slate-500 text-white font-bold px-2.5 py-1.5 rounded-lg">↶ 戻す</button>
           </div>
         </div>
@@ -332,7 +343,7 @@
           </div>
         </div>
         <div class="border-t border-slate-600 pt-3 space-y-2">
-          <label class="block text-xs text-slate-300 mb-1">子どもに表示する今日の限界時間（表示のみ）</label>
+          <label class="block text-xs text-slate-300 mb-1">子どもに表示する今日の就寝時間（表示のみ）</label>
           <input type="time" id="displayLimitTimeInput" onchange="updateDisplayLimitTime(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
           <p class="text-[11px] text-slate-300">現在選択中のモードに設定されます。獲得時間の計算には影響しません。</p>
         </div>
@@ -516,7 +527,7 @@
       if(!after && !window.appState.isPaused) notice.classList.remove("hidden"); else notice.classList.add("hidden");
       
       const modeLimit = (window.appState.displayLimitTimes || {})[mode] || window.appState.baseTime || "21:30";
-      document.getElementById("calculatedEndTime").innerText = `（今日の限界時間 ${modeLimit} まで）`;
+      document.getElementById("calculatedEndTime").innerText = `（今日の就寝時間 ${modeLimit} まで）`;
     }
     function applyBg() {
       const body = document.getElementById("appBody"), mode = window.appState.currentMode || "weekday";
