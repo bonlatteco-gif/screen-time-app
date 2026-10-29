@@ -340,9 +340,10 @@
 
     <div class="bg-slate-800/90 backdrop-blur-md text-white rounded-2xl p-4 shadow-lg space-y-4">
       <div class="flex items-center justify-between border-b border-slate-700 pb-2 gap-2">
-          <h2 class="text-sm font-bold flex items-center gap-1.5 text-amber-400">⚙️ 管理者設定</h2>
-        </div>
-
+        <h2 class="text-sm font-bold flex items-center gap-1.5 text-amber-400">⚙️ 管理者設定</h2>
+        <button id="adminSettingsToggle" type="button" onclick="toggleAdminSettings()" aria-expanded="true" class="text-xs bg-slate-700 hover:bg-slate-600 text-white font-bold px-3 py-1.5 rounded-lg">設定を畳む ▲</button>
+      </div>
+      <div id="adminSettingsContent" class="space-y-4">
       <div class="bg-slate-700/60 p-3 rounded-xl space-y-3">
         <div class="flex justify-between items-center">
           <h3 class="text-xs font-bold text-amber-300">📁 モード管理</h3>
@@ -405,6 +406,7 @@
 
       <div class="pt-2 border-t border-slate-700">
         <button onclick="addGroup()" class="w-full bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg text-slate-200">＋ 新規選択グループ追加</button>
+      </div>
       </div>
     </div>
 
@@ -562,6 +564,16 @@
       if(mObj && mObj.bgType === "image" && mObj.bgImage) { body.style.backgroundImage = `linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('${mObj.bgImage}')`; body.style.backgroundColor = ""; }
       else { body.style.backgroundImage = "none"; body.style.backgroundColor = (mObj && mObj.bgColor) ? mObj.bgColor : "#f1f5f9"; }
     }
+    window.toggleAdminSettings = function() {
+      const content = document.getElementById("adminSettingsContent");
+      const button = document.getElementById("adminSettingsToggle");
+      if (!content || !button) return;
+      const willCollapse = !content.classList.contains("hidden");
+      content.classList.toggle("hidden", willCollapse);
+      button.textContent = willCollapse ? "設定を開く ▼" : "設定を畳む ▲";
+      button.setAttribute("aria-expanded", String(!willCollapse));
+    };
+
     window.renderUI = function() {
       applyBg();
       const tabC = document.getElementById("modeTabsContainer"); tabC.innerHTML = "";
