@@ -378,7 +378,7 @@
       }
       
       const modeLimit = (window.appState.displayLimitTimes || {})[mode] || window.appState.baseTime || "21:30";
-      document.getElementById("calculatedEndTime").innerText = `（今日の限界時間 ${modeLimit} まで）`;
+      document.getElementById("calculatedEndTime").innerText = `（今日の就寝時間 ${modeLimit} まで）`;
     }
 
     window.renderUI = function() {
@@ -453,7 +453,6 @@
     function createGroupCard(group, mode) {
       const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode))
         .sort((a, b) => Number(!!a.completed) - Number(!!b.completed));
-      
       if (items.length === 0) return null;
       
       const wrap = document.createElement("div"); wrap.dataset.id = group.id;
