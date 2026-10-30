@@ -287,6 +287,18 @@
     } else { window.loadLocal(); }
   </script>
   <style>.bg-custom-fitted { background-size: contain; background-position: center; background-repeat: repeat; background-attachment: fixed; background-color: #f1f5f9; }</style>
+
+<style id="pull-to-refresh-style">
+  #pullToRefreshIndicator {
+    position: fixed; top: 0; left: 50%; transform: translate(-50%, -110%);
+    z-index: 99999; padding: 9px 16px; border-radius: 0 0 14px 14px;
+    background: rgba(255,255,255,.96); color: #334155;
+    box-shadow: 0 3px 12px rgba(0,0,0,.12); font-size: 13px; font-weight: 700;
+    white-space: nowrap; pointer-events: none; transition: transform .12s ease;
+  }
+  #pullToRefreshIndicator.visible { transform: translate(-50%, 0); }
+</style>
+
 </head>
 <body id="appBody" class="text-slate-800 min-h-screen pb-32 select-none transition-all duration-300 bg-custom-fitted">
 
@@ -881,5 +893,72 @@
     }
     window.addEventListener("DOMContentLoaded", () => { window.renderUI(); });
   </script>
+
+<script id="pull-to-refresh-script">
+(() => {
+  let startY = 0;
+  let pulling = false;
+  let pullDistance = 0;
+  const threshold = 85;
+  let indicator;
+
+  function setupPullToRefresh() {
+    if (indicator) return;
+    indicator = document.createElement('div');
+    indicator.id = 'pullToRefreshIndicator';
+    indicator.textContent = '↓ 下に引っ張って更新';
+    document.body.appendChild(indicator);
+
+    document.addEventListener('touchstart', (event) => {
+      if (event.touches.length !== 1 || window.scrollY > 0) return;
+      startY = event.touches[0].clientY;
+      pulling = startY < 140;
+      pullDistance = 0;
+    }, { passive: true });
+
+    document.addEventListener('touchmove', (event) => {
+      if (!pulling || event.touches.length !== 1 || window.scrollY > 0) return;
+      const delta = event.touches[0].clientY - startY;
+      if (delta <= 0) {
+        pullDistance = 0;
+        indicator.classList.remove('visible');
+        return;
+      }
+      pullDistance = delta;
+      if (delta > 12) {
+        indicator.classList.add('visible');
+        indicator.textContent = delta >= threshold ? '↑ 離すと更新' : '↓ 下に引っ張って更新';
+      }
+    }, { passive: true });
+
+    document.addEventListener('touchend', () => {
+      if (!pulling) return;
+      const shouldRefresh = pullDistance >= threshold && window.scrollY <= 0;
+      pulling = false;
+      pullDistance = 0;
+      if (shouldRefresh) {
+        indicator.textContent = '更新しています…';
+        indicator.classList.add('visible');
+        window.setTimeout(() => window.location.reload(), 120);
+      } else {
+        indicator.classList.remove('visible');
+      }
+    }, { passive: true });
+
+    document.addEventListener('touchcancel', () => {
+      pulling = false;
+      pullDistance = 0;
+      indicator.classList.remove('visible');
+    }, { passive: true });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupPullToRefresh, { once: true });
+  } else {
+    setupPullToRefresh();
+  }
+})();
+</script>
+
 </body>
 </html>
