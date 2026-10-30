@@ -715,7 +715,7 @@
       
       const wrap = document.createElement("div"); wrap.dataset.id = group.id;
       wrap.className = "bg-slate-200/70 backdrop-blur-sm rounded-2xl p-3 border border-slate-300/70 space-y-2";
-      wrap.innerHTML = `<div class="flex justify-between items-center px-1 text-slate-600 text-xs font-bold gap-2"><div class="flex items-center gap-2 min-w-0"><span>📌</span><span class="min-w-0 text-slate-700 font-bold text-xs py-1">どれか一つにチェックをつける</span></div><div class="flex items-center gap-2 shrink-0"><button onclick="moveGroup('${group.id}',-1)" title="グループを上へ" class="text-slate-500 text-sm px-1">↑</button><button onclick="moveGroup('${group.id}',1)" title="グループを下へ" class="text-slate-500 text-sm px-1">↓</button></div></div>`;
+      wrap.innerHTML = `<div class="flex justify-between items-center px-1 text-slate-600 text-xs font-bold gap-2"><div class="flex items-center gap-2 min-w-0"><span>📌</span><span class="min-w-0 text-slate-700 font-bold text-xs py-1">どれか一つ☑</span></div><div class="flex items-center gap-2 shrink-0"><button onclick="moveGroup('${group.id}',-1)" title="グループを上へ" class="text-slate-500 text-sm px-1">↑</button><button onclick="moveGroup('${group.id}',1)" title="グループを下へ" class="text-slate-500 text-sm px-1">↓</button></div></div>`;
       const inner = document.createElement("div"); inner.className = "space-y-2 group-inner"; inner.dataset.groupId = group.id;
       items.forEach(i => inner.appendChild(createItemCard(i)));
       wrap.appendChild(inner);
