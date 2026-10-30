@@ -39,8 +39,6 @@
       order: ["item_1", "item_2", "item_4", "group_1"],
       baseTime: "21:30",
       carryOverMinutes: 0,
-      pendingCarryOverMinutes: null,
-      displayLimitTimes: { weekday: "21:30", holiday: "21:30" },
       lastResetTimestamp: Date.now(),
       isAdmin: false,
       isPaused: false,
@@ -54,53 +52,25 @@
       docRef = doc(db, "screentime", "sharedState");
     } catch(e) {}
 
-    window.__stateReady = false;
-    window.__saveBlockedNoticeShown = false;
     window.saveState = async function() {
       const p = {
         modes: window.appState.modes, items: window.appState.items, groups: window.appState.groups,
-        order: window.appState.order, baseTime: window.appState.baseTime,
-        carryOverMinutes: window.appState.carryOverMinutes,
-        pendingCarryOverMinutes: window.appState.pendingCarryOverMinutes ?? null,
-        displayLimitTimes: window.appState.displayLimitTimes || {},
+        order: window.appState.order, baseTime: window.appState.baseTime, carryOverMinutes: window.appState.carryOverMinutes,
         isPaused: !!window.appState.isPaused, currentMode: window.appState.currentMode || "weekday",
         lastResetTimestamp: window.appState.lastResetTimestamp, updatedAt: Date.now()
       };
-      if (docRef && !window.__stateReady) {
-        if (!window.__saveBlockedNoticeShown) {
-          window.__saveBlockedNoticeShown = true;
-          alert("保存先のデータを確認できていないため、今回は保存していません。画面を再読み込みして、通信状況を確認してください。");
-        }
-        return false;
-      }
       localStorage.setItem("screentime_backup", JSON.stringify(p));
-      if (docRef) {
-        try {
-          await setDoc(docRef, p);
-          return true;
-        } catch(err) {
-          console.error("保存に失敗しました", err);
-          alert("クラウドへの保存に失敗しました。通信状況を確認してください。");
-          return false;
-        }
-      }
-      return true;
+      if (docRef) { try { await setDoc(docRef, p); } catch(err) {} }
     };
 
     window.sanitizeData = function(data) {
       if (data.items) {
         data.items.forEach(i => {
-          if (!i.targetModes) i.targetModes = i.dayType ? [i.dayType] : ["all"];
-          if (typeof i.minutes !== "number") i.minutes = parseInt(i.minutes || 0, 10);
+          if (!i.targetModes) {
+            i.targetModes = i.dayType ? [i.dayType] : ["all"];
+          }
         });
       }
-      if (!data.displayLimitTimes || typeof data.displayLimitTimes !== "object") {
-        data.displayLimitTimes = {};
-      }
-      (data.modes || defModes).forEach(m => {
-        if (!data.displayLimitTimes[m.id]) data.displayLimitTimes[m.id] = data.baseTime || "21:30";
-      });
-      if (data.pendingCarryOverMinutes === undefined) data.pendingCarryOverMinutes = null;
     };
 
     window.isMatch = function(item, mode) {
@@ -127,24 +97,19 @@
       target.setHours(3,0,0,0);
 
       if (last.getTime() < target.getTime()) {
-        if (window.appState.pendingCarryOverMinutes !== null && window.appState.pendingCarryOverMinutes !== undefined) {
-          // 管理者が繰り越しを確定した場合は、その時点で確保した分だけを翌日に渡す
-          window.appState.carryOverMinutes = Math.max(0, parseInt(window.appState.pendingCarryOverMinutes || 0, 10));
-          window.appState.pendingCarryOverMinutes = null;
-        } else {
-          let earned = 0, curM = window.appState.currentMode || "weekday";
-          (window.appState.items || []).forEach(i => { if (i.completed && window.isMatch(i, curM)) earned += parseInt(i.minutes||0, 10); });
-          let total = earned + parseInt(window.appState.carryOverMinutes||0, 10);
-          const [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
-          let used = 0;
-          if (now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3) {
-            let st = new Date(now);
-            if (now.getHours() < 3) st.setDate(st.getDate() - 1);
-            st.setHours(sH, sM, 0, 0);
-            used = Math.floor((now.getTime() - st.getTime()) / 60000);
-          }
-          window.appState.carryOverMinutes = Math.max(0, total - used);
+        let earned = 0, curM = window.appState.currentMode || "weekday";
+        (window.appState.items || []).forEach(i => { if (i.completed && window.isMatch(i, curM)) earned += parseInt(i.minutes||0, 10); });
+        let total = earned + parseInt(window.appState.carryOverMinutes||0, 10);
+
+        const [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
+        let used = 0;
+        if (now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3) {
+          let st = new Date(now);
+          if (now.getHours() < 3) st.setDate(st.getDate() - 1);
+          st.setHours(sH, sM, 0, 0);
+          used = Math.floor((now.getTime() - st.getTime()) / 60000);
         }
+        window.appState.carryOverMinutes = Math.max(0, total - used);
         window.appState.items.forEach(i => i.completed = false);
         window.appState.lastResetTimestamp = now.getTime();
         window.saveState();
@@ -153,40 +118,17 @@
 
     if (docRef) {
       onSnapshot(docRef, (snap) => {
-        if (snap.exists()) {
-          window.__stateReady = true;
+        if (snap.exists()) { 
           const d = snap.data();
           window.sanitizeData(d);
-          Object.assign(window.appState, d);
-          localStorage.setItem("screentime_backup", JSON.stringify(d));
-        } else {
-          const local = localStorage.getItem("screentime_backup");
-          if (local) {
-            window.loadLocal();
-            window.__stateReady = true;
-            window.saveState();
-          } else {
-            window.__stateReady = false;
-          }
-        }
+          Object.assign(window.appState, d); 
+        } else { window.saveState(); }
         window.checkReset();
         if (window.renderUI) window.renderUI();
-      }, () => { window.__stateReady = false; window.loadLocal(); window.checkReset(); if (window.renderUI) window.renderUI(); });
+      }, () => { window.loadLocal(); window.checkReset(); if (window.renderUI) window.renderUI(); });
     } else { window.loadLocal(); }
   </script>
   <style>.bg-custom-fitted { background-size: contain; background-position: center; background-repeat: repeat; background-attachment: fixed; background-color: #f1f5f9; }</style>
-
-<style id="pull-to-refresh-style">
-  #pullToRefreshIndicator {
-    position: fixed; top: 0; left: 50%; transform: translate(-50%, -110%);
-    z-index: 99999; padding: 9px 16px; border-radius: 0 0 14px 14px;
-    background: rgba(255,255,255,.96); color: #334155;
-    box-shadow: 0 3px 12px rgba(0,0,0,.12); font-size: 13px; font-weight: 700;
-    white-space: nowrap; pointer-events: none; transition: transform .12s ease;
-  }
-  #pullToRefreshIndicator.visible { transform: translate(-50%, 0); }
-</style>
-
 </head>
 <body id="appBody" class="text-slate-800 min-h-screen pb-32 select-none transition-all duration-300 bg-custom-fitted">
 
@@ -389,8 +331,8 @@
         if(!after) notice.classList.remove("hidden"); else notice.classList.add("hidden");
       }
       
-      const modeLimit = (window.appState.displayLimitTimes || {})[mode] || window.appState.baseTime || "21:30";
-      document.getElementById("calculatedEndTime").innerText = `（今日の就寝時間 ${modeLimit} まで）`;
+      let endM = sH * 60 + sM + rem, eH = Math.floor(endM / 60) % 24, eMin = endM % 60;
+      document.getElementById("calculatedEndTime").innerText = `（最大 ${String(eH).padStart(2,'0')}:${String(eMin).padStart(2,'0')} まで）`;
     }
 
     window.renderUI = function() {
@@ -410,10 +352,11 @@
       const container = document.getElementById("unifiedListContainer"); container.innerHTML = "";
       const curMode = window.appState.currentMode || "weekday";
       
+      // グループ外の項目だけ、チェック済みを下へ表示する。グループとグループ内の順番は維持する。
       const visibleOrder = (window.appState.order || []).slice().sort((a, b) => {
-        const ia = (window.appState.items || []).find(x => x.id === a && !x.groupId);
-        const ib = (window.appState.items || []).find(x => x.id === b && !x.groupId);
-        return Number(!!(ia && ia.completed)) - Number(!!(ib && ib.completed));
+        const itemA = (window.appState.items || []).find(x => x.id === a && !x.groupId);
+        const itemB = (window.appState.items || []).find(x => x.id === b && !x.groupId);
+        return Number(!!(itemA && itemA.completed)) - Number(!!(itemB && itemB.completed));
       });
       visibleOrder.forEach(id => {
         if(id.startsWith("group_")) {
@@ -452,35 +395,23 @@
       card.innerHTML = `
         <div class="flex items-center gap-3 flex-1 min-w-0 mr-2 cursor-pointer" onclick="toggleCheck('${item.id}')">
           <input type="checkbox" ${item.completed?'checked':''} class="w-5 h-5 rounded border-slate-300 text-indigo-600 pointer-events-none flex-shrink-0">
-          <div class="flex flex-col min-w-0">
-            <span class="text-sm font-medium text-slate-800 break-words ${item.completed ? 'line-through text-slate-400' : ''}">${item.text}</span>
-            <div class="mt-0.5 flex flex-wrap items-center gap-1">${bHtml}${item.completed ? '<span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded">✓ チェック済み</span>' : ''}</div>
-          </div>
+          <div class="flex flex-col min-w-0"><span class="text-sm font-medium text-slate-800 break-words">${item.text}</span><div class="mt-0.5">${bHtml}</div></div>
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
-          <span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm">${item.minutes > 0 ? '+' : ''}${item.minutes}分</span>
+          <span class="px-2.5 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm">+${item.minutes}分</span>
         </div>`;
       return card;
     }
     function createGroupCard(group, mode) {
-      const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode))
-        .sort((a, b) => Number(!!a.completed) - Number(!!b.completed));
+      const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode));
       if (items.length === 0) return null;
       
       const wrap = document.createElement("div"); wrap.dataset.id = group.id;
       wrap.className = "bg-slate-200/70 backdrop-blur-sm rounded-2xl p-3 border border-slate-300/70 space-y-2";
-      wrap.innerHTML = `<div class="flex justify-between items-center px-1 text-slate-600 text-xs font-bold"><span>📌 どれか一つ☑</span></div>`;
+      wrap.innerHTML = `<div class="flex justify-between items-center px-1 text-slate-600 text-xs font-bold"><span>📌 どれか1つ選択</span></div>`;
       const inner = document.createElement("div"); inner.className = "space-y-2 group-inner"; inner.dataset.groupId = group.id;
       items.forEach(i => inner.appendChild(createItemCard(i)));
-      wrap.appendChild(inner);
-      const groupNameRow = document.createElement("div");
-      groupNameRow.className = "flex justify-start border-t border-slate-300/70 pt-1 mt-1";
-      const groupNameLabel = document.createElement("span");
-      groupNameLabel.className = "text-slate-600 text-xs py-1 min-w-0 break-words";
-      groupNameLabel.textContent = `(${group.name || "選択グループ"})`;
-      groupNameRow.appendChild(groupNameLabel);
-      wrap.appendChild(groupNameRow);
-      return wrap;
+      wrap.appendChild(inner); return wrap;
     }
     window.toggleCheck = (id) => {
       const i = (window.appState.items || []).find(x => x.id === id); if(!i) return;
@@ -493,72 +424,5 @@
       window.renderUI(); 
     });
   </script>
-
-<script id="pull-to-refresh-script">
-(() => {
-  let startY = 0;
-  let pulling = false;
-  let pullDistance = 0;
-  const threshold = 85;
-  let indicator;
-
-  function setupPullToRefresh() {
-    if (indicator) return;
-    indicator = document.createElement('div');
-    indicator.id = 'pullToRefreshIndicator';
-    indicator.textContent = '↓ 下に引っ張って更新';
-    document.body.appendChild(indicator);
-
-    document.addEventListener('touchstart', (event) => {
-      if (event.touches.length !== 1 || window.scrollY > 0) return;
-      startY = event.touches[0].clientY;
-      pulling = startY < 140;
-      pullDistance = 0;
-    }, { passive: true });
-
-    document.addEventListener('touchmove', (event) => {
-      if (!pulling || event.touches.length !== 1 || window.scrollY > 0) return;
-      const delta = event.touches[0].clientY - startY;
-      if (delta <= 0) {
-        pullDistance = 0;
-        indicator.classList.remove('visible');
-        return;
-      }
-      pullDistance = delta;
-      if (delta > 12) {
-        indicator.classList.add('visible');
-        indicator.textContent = delta >= threshold ? '↑ 離すと更新' : '↓ 下に引っ張って更新';
-      }
-    }, { passive: true });
-
-    document.addEventListener('touchend', () => {
-      if (!pulling) return;
-      const shouldRefresh = pullDistance >= threshold && window.scrollY <= 0;
-      pulling = false;
-      pullDistance = 0;
-      if (shouldRefresh) {
-        indicator.textContent = '更新しています…';
-        indicator.classList.add('visible');
-        window.setTimeout(() => window.location.reload(), 120);
-      } else {
-        indicator.classList.remove('visible');
-      }
-    }, { passive: true });
-
-    document.addEventListener('touchcancel', () => {
-      pulling = false;
-      pullDistance = 0;
-      indicator.classList.remove('visible');
-    }, { passive: true });
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', setupPullToRefresh, { once: true });
-  } else {
-    setupPullToRefresh();
-  }
-})();
-</script>
-
 </body>
 </html>
