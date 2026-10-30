@@ -108,7 +108,7 @@
         } catch(e) {}
       }
       localStorage.setItem("screentime_backup", JSON.stringify(p));
-      updateUndoButton();
+      window.updateUndoButton();
       if (docRef) {
         try {
           await setDoc(docRef, p);
@@ -167,9 +167,9 @@
       await window.saveState();
       window.__skipUndo = false;
       if (window.renderUI) window.renderUI();
-      updateUndoButton();
+      window.updateUndoButton();
     };
-    function updateUndoButton() {
+    window.updateUndoButton = function() {
       const btn = document.getElementById("undoButton");
       if (!btn) return;
       const history = JSON.parse(localStorage.getItem("screentime_undo_history") || "[]");
@@ -182,7 +182,7 @@
       const notice = document.getElementById("dataSafetyNotice");
       if (notice) notice.classList.add("hidden");
       await window.saveState();
-      updateUndoButton();
+      window.updateUndoButton();
     };
 
     window.sanitizeData = function(data) {
