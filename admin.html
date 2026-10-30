@@ -399,7 +399,7 @@
           <label class="block text-xs text-slate-300 mb-1">項目名</label>
           <input type="text" id="newItemText" placeholder="例: 勉強 30分" required class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none">
         </div>
-        <div class="grid grid-cols-3 gap-2">
+        <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block text-xs text-slate-300 mb-1">獲得分</label>
             <input type="number" id="newItemMinutes" placeholder="15 / -15" required min="-1440" class="w-full text-slate-900 text-sm px-3 py-2 rounded-lg focus:outline-none">
@@ -408,11 +408,19 @@
             <label class="block text-xs text-slate-300 mb-1">モード</label>
             <select id="newItemModeSelect" class="w-full text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none font-bold"></select>
           </div>
-          <div>
+        </div>
+        <div class="grid grid-cols-3 gap-2 items-end">
+          <div class="min-w-0">
             <label class="block text-xs text-slate-300 mb-1">グループ</label>
-            <select id="newItemGroup" onchange="handleGroupDropdownChange('newItemGroup')" class="w-full text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none text-slate-900"><option value="">(なし)</option></select>
-            <input id="newItemGroupName" type="text" placeholder="選択したグループ名を直接変更" aria-label="選択したグループ名" class="mt-1 w-full text-slate-900 text-xs px-2 py-1 rounded-lg border border-slate-300 focus:outline-none" onchange="saveSelectedGroupName()" />
-            <button id="deleteSelectedGroupButton" type="button" onclick="deleteSelectedGroupFromOutside()" disabled class="mt-1 w-full text-left text-xs px-2 py-1 rounded-lg border border-rose-300 text-rose-700 disabled:opacity-40 disabled:cursor-not-allowed">🗑 選択中のグループを削除</button>
+            <select id="newItemGroup" onchange="handleGroupDropdownChange('newItemGroup')" class="w-full min-w-0 text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none"><option value="">(なし)</option></select>
+          </div>
+          <div class="min-w-0">
+            <label class="block text-xs text-slate-300 mb-1">グループ名</label>
+            <input id="newItemGroupName" type="text" placeholder="名前を変更" aria-label="選択したグループ名" class="w-full min-w-0 h-[38px] text-slate-900 text-sm px-2 rounded-lg border border-slate-300 focus:outline-none disabled:bg-slate-100" onchange="saveSelectedGroupName()" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-300 mb-1">削除</label>
+            <button id="deleteSelectedGroupButton" type="button" onclick="deleteSelectedGroupFromOutside()" disabled title="選択中のグループを削除" aria-label="選択中のグループを削除" class="w-full h-[38px] rounded-lg border border-rose-300 bg-white text-rose-700 text-sm font-bold hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed">削除</button>
           </div>
         </div>
         <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-2 rounded-lg text-sm transition">＋ 項目を追加する</button>
@@ -895,7 +903,9 @@
       input.classList.toggle("bg-slate-100", !group);
       if (deleteButton) {
         deleteButton.disabled = !group;
-        deleteButton.textContent = group ? `🗑「${groupName}」を削除` : "🗑 選択中のグループを削除";
+        deleteButton.textContent = "削除";
+        deleteButton.title = group ? `「${groupName}」を削除` : "選択中のグループを削除";
+        deleteButton.setAttribute("aria-label", deleteButton.title);
       }
     };
 
