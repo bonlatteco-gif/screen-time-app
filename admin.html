@@ -721,14 +721,23 @@
       wrap.appendChild(inner);
       const deleteRow = document.createElement("div");
       deleteRow.className = "flex justify-between items-center border-t border-slate-300/70 pt-1 mt-1 gap-2";
-      const groupNameLabel = document.createElement("span");
-      groupNameLabel.className = "text-slate-600 text-xs py-1 min-w-0 break-words";
-      groupNameLabel.textContent = `(${group.name || "選択グループ"})`;
+      const groupNameInput = document.createElement("input");
+      groupNameInput.type = "text";
+      groupNameInput.setAttribute("aria-label", "グループ名");
+      groupNameInput.className = "text-slate-600 text-xs py-1 min-w-0 flex-1 bg-transparent border-b border-slate-300 focus:border-blue-500 outline-none";
+      groupNameInput.value = group.name || "選択グループ";
+      groupNameInput.placeholder = "グループ名";
+      groupNameInput.addEventListener("change", async () => {
+        const newName = groupNameInput.value.trim() || "選択グループ";
+        group.name = newName;
+        groupNameInput.value = newName;
+        await window.saveState();
+      });
       const deleteButton = document.createElement("button");
       deleteButton.className = "text-rose-500 text-xs py-1 px-2 shrink-0";
       deleteButton.textContent = "グループ削除";
       deleteButton.onclick = () => deleteGroup(group.id);
-      deleteRow.appendChild(groupNameLabel);
+      deleteRow.appendChild(groupNameInput);
       deleteRow.appendChild(deleteButton);
       wrap.appendChild(deleteRow);
       return wrap;
