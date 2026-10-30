@@ -693,7 +693,6 @@
           </div>
           <button onclick="openEditModal('${item.id}')" class="p-1 text-slate-400 text-xs">✏️</button>
           <button onclick="deleteItem('${item.id}')" class="p-1 text-rose-400 text-xs">🗑</button>
-          <span class="drag-handle cursor-grab text-slate-400 px-1 text-sm">☰</span>
         </div>`;
       return card;
     }
@@ -704,10 +703,15 @@
       
       const wrap = document.createElement("div"); wrap.dataset.id = group.id;
       wrap.className = "bg-slate-200/70 backdrop-blur-sm rounded-2xl p-3 border border-slate-300/70 space-y-2";
-      wrap.innerHTML = `<div class="flex justify-between items-center px-1 text-slate-600 text-xs font-bold gap-2"><span>📌 どれか1つ選択</span><div class="flex items-center gap-2"><button onclick="moveGroup('${group.id}',-1)" title="グループを上へ" class="text-slate-500 text-sm px-1">↑</button><button onclick="moveGroup('${group.id}',1)" title="グループを下へ" class="text-slate-500 text-sm px-1">↓</button><button onclick="deleteGroup('${group.id}')" class="text-rose-500 text-xs">グループ削除</button><span class="drag-handle cursor-grab text-slate-400 text-sm font-extrabold px-1">⠿</span></div></div>`;
+      wrap.innerHTML = `<div class="flex justify-between items-center px-1 text-slate-600 text-xs font-bold gap-2"><span>📌 どれか1つ選択</span><div class="flex items-center gap-2"><button onclick="moveGroup('${group.id}',-1)" title="グループを上へ" class="text-slate-500 text-sm px-1">↑</button><button onclick="moveGroup('${group.id}',1)" title="グループを下へ" class="text-slate-500 text-sm px-1">↓</button></div></div>`;
       const inner = document.createElement("div"); inner.className = "space-y-2 group-inner"; inner.dataset.groupId = group.id;
       items.forEach(i => inner.appendChild(createItemCard(i)));
-      wrap.appendChild(inner); return wrap;
+      wrap.appendChild(inner);
+      const deleteRow = document.createElement("div");
+      deleteRow.className = "flex justify-end border-t border-slate-300/70 pt-1 mt-1";
+      deleteRow.innerHTML = `<button onclick="deleteGroup('${group.id}')" class="text-rose-500 text-xs py-1 px-2">グループ削除</button>`;
+      wrap.appendChild(deleteRow);
+      return wrap;
     }
     window.toggleCheck = (id) => {
       const i = (window.appState.items || []).find(x => x.id === id); if(!i) return;
