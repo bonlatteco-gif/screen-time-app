@@ -878,7 +878,7 @@
       await window.saveState();
     };
 
-    window.handleGroupDropdownChange = (selectId) => {
+    window.handleGroupDropdownChange = async (selectId) => {
       const select = document.getElementById(selectId);
       if (!select) return;
       const value = select.value;
@@ -908,7 +908,7 @@
             alert("グループ名を入力してください。");
           } else {
             group.name = newName;
-            window.updateDropdowns();
+            updateDropdowns();
             window.renderUI();
             await window.saveState();
           }
