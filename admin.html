@@ -411,7 +411,6 @@
           <div>
             <label class="block text-xs text-slate-300 mb-1">グループ</label>
             <select id="newItemGroup" onchange="handleGroupDropdownChange('newItemGroup')" class="w-full text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none text-slate-900"><option value="">(なし)</option></select>
-            <button type="button" onclick="renameGroupFromDropdown('newItemGroup')" class="mt-1 text-xs text-amber-300 underline">選択中のグループ名を変更</button>
           </div>
         </div>
         <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-2 rounded-lg text-sm transition">＋ 項目を追加する</button>
@@ -457,7 +456,7 @@
         <div><label class="block text-xs font-bold text-slate-500 mb-1">獲得分</label><input type="number" id="editItemMinutes" min="-1440" class="w-full border rounded-lg p-2 text-sm"></div>
         <div><label class="block text-xs font-bold text-slate-500 mb-1">モード</label><select id="editItemModeSelect" class="w-full border rounded-lg p-2 text-sm font-bold"></select></div>
       </div>
-      <div><label class="block text-xs font-bold text-slate-500 mb-1">グループ</label><select id="editItemGroup" onchange="handleGroupDropdownChange('editItemGroup')" class="w-full border rounded-lg p-2 text-sm"><option value="">(なし)</option></select><button type="button" onclick="renameGroupFromDropdown('editItemGroup')" class="mt-1 text-xs text-indigo-600 underline">選択中のグループ名を変更</button></div>
+      <div><label class="block text-xs font-bold text-slate-500 mb-1">グループ</label><select id="editItemGroup" onchange="handleGroupDropdownChange('editItemGroup')" class="w-full border rounded-lg p-2 text-sm"><option value="">(なし)</option></select></div>
       <div class="flex gap-2 pt-2">
         <button onclick="closeEditModal()" class="flex-1 bg-slate-200 text-slate-700 text-sm font-bold py-2 rounded-lg">キャンセル</button>
         <button onclick="saveEditItem()" class="flex-1 bg-indigo-600 text-white text-sm font-bold py-2 rounded-lg">保存する</button>
@@ -893,6 +892,34 @@
         }
         return;
       }
+      if (value === "__rename_group__") {
+        const previousId = select.dataset.lastValue || "";
+        const group = (window.appState.groups || []).find(g => g.id === previousId);
+        if (!group) {
+          alert("先に名前を変更するグループを選択してください。");
+          select.value = "";
+          select.dataset.lastValue = "";
+          return;
+        }
+        const enteredName = prompt("新しいグループ名を入力してください。", group.name || "選択グループ");
+        if (enteredName !== null) {
+          const newName = enteredName.trim();
+          if (!newName) {
+            alert("グループ名を入力してください。");
+          } else {
+            group.name = newName;
+            window.updateDropdowns();
+            window.renderUI();
+            await window.saveState();
+          }
+        }
+        const refreshed = document.getElementById(selectId);
+        if (refreshed) {
+          refreshed.value = (window.appState.groups || []).some(g => g.id === previousId) ? previousId : "";
+          refreshed.dataset.lastValue = refreshed.value;
+        }
+        return;
+      }
       if (value === "__delete_group__") {
         const previousId = select.dataset.lastValue || "";
         if (!previousId) {
@@ -916,6 +943,7 @@
       [document.getElementById("newItemGroup"), document.getElementById("editItemGroup")].forEach(s => {
         if(!s) return; const cur = s.value; s.innerHTML = '<option value="">(なし)</option>';
         window.appState.groups.forEach((g, idx) => { const opt = document.createElement("option"); opt.value = g.id; opt.innerText = g.name || `選択グループ ${idx+1}`; s.appendChild(opt); });
+        const renameOpt = document.createElement("option"); renameOpt.value = "__rename_group__"; renameOpt.textContent = "✏️ 選択中のグループ名を変更…"; s.appendChild(renameOpt);
         const addOpt = document.createElement("option"); addOpt.value = "__add_group__"; addOpt.textContent = "＋ 新規グループ追加…"; s.appendChild(addOpt);
         const deleteOpt = document.createElement("option"); deleteOpt.value = "__delete_group__"; deleteOpt.textContent = "🗑 選択中のグループを削除…"; s.appendChild(deleteOpt);
         const validCur = Array.from(s.options).some(opt => opt.value === cur) ? cur : "";
