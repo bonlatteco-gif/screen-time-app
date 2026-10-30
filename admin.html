@@ -410,16 +410,13 @@
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">グループ</label>
-            <select id="newItemGroup" class="w-full text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none text-slate-900"><option value="">(なし)</option></select>
+            <select id="newItemGroup" onchange="handleGroupDropdownChange('newItemGroup')" class="w-full text-slate-900 text-sm px-2 py-2 rounded-lg focus:outline-none text-slate-900"><option value="">(なし)</option></select>
             <button type="button" onclick="renameGroupFromDropdown('newItemGroup')" class="mt-1 text-xs text-amber-300 underline">選択中のグループ名を変更</button>
           </div>
         </div>
         <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-2 rounded-lg text-sm transition">＋ 項目を追加する</button>
       </form>
 
-      <div class="pt-2 border-t border-slate-700">
-        <button onclick="addGroup()" class="w-full bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg text-slate-200">＋ 新規選択グループ追加</button>
-      </div>
       </div>
     </div>
 
@@ -460,7 +457,7 @@
         <div><label class="block text-xs font-bold text-slate-500 mb-1">獲得分</label><input type="number" id="editItemMinutes" min="-1440" class="w-full border rounded-lg p-2 text-sm"></div>
         <div><label class="block text-xs font-bold text-slate-500 mb-1">モード</label><select id="editItemModeSelect" class="w-full border rounded-lg p-2 text-sm font-bold"></select></div>
       </div>
-      <div><label class="block text-xs font-bold text-slate-500 mb-1">グループ</label><select id="editItemGroup" class="w-full border rounded-lg p-2 text-sm"><option value="">(なし)</option></select><button type="button" onclick="renameGroupFromDropdown('editItemGroup')" class="mt-1 text-xs text-indigo-600 underline">選択中のグループ名を変更</button></div>
+      <div><label class="block text-xs font-bold text-slate-500 mb-1">グループ</label><select id="editItemGroup" onchange="handleGroupDropdownChange('editItemGroup')" class="w-full border rounded-lg p-2 text-sm"><option value="">(なし)</option></select><button type="button" onclick="renameGroupFromDropdown('editItemGroup')" class="mt-1 text-xs text-indigo-600 underline">選択中のグループ名を変更</button></div>
       <div class="flex gap-2 pt-2">
         <button onclick="closeEditModal()" class="flex-1 bg-slate-200 text-slate-700 text-sm font-bold py-2 rounded-lg">キャンセル</button>
         <button onclick="saveEditItem()" class="flex-1 bg-indigo-600 text-white text-sm font-bold py-2 rounded-lg">保存する</button>
@@ -847,9 +844,10 @@
     };
     window.addGroup = () => {
       const id = "group_" + Date.now();
-      window.appState.groups.push({ id, type: "group", name: "選択グループ" });
+      window.appState.groups.push({ id, type: "group", name: `選択グループ ${window.appState.groups.length + 1}` });
       window.appState.order.push(id);
       window.renderUI(); window.saveState();
+      return id;
     };
     window.deleteGroup = (id) => {
       if(!confirm("グループを削除しますか？")) return;
@@ -881,11 +879,48 @@
       await window.saveState();
     };
 
+    window.handleGroupDropdownChange = (selectId) => {
+      const select = document.getElementById(selectId);
+      if (!select) return;
+      const value = select.value;
+      if (value === "__add_group__") {
+        // アクション項目を選ぶたびに追加されないよう、処理後は新しく作ったグループを選択状態にする
+        const newId = window.addGroup();
+        const refreshed = document.getElementById(selectId);
+        if (refreshed) {
+          refreshed.value = newId;
+          refreshed.dataset.lastValue = newId;
+        }
+        return;
+      }
+      if (value === "__delete_group__") {
+        const previousId = select.dataset.lastValue || "";
+        if (!previousId) {
+          alert("先に削除するグループを選択してください。");
+          select.value = "";
+          select.dataset.lastValue = "";
+          return;
+        }
+        window.deleteGroup(previousId);
+        const refreshed = document.getElementById(selectId);
+        if (refreshed) {
+          refreshed.value = (window.appState.groups || []).some(g => g.id === previousId) ? previousId : "";
+          refreshed.dataset.lastValue = refreshed.value;
+        }
+        return;
+      }
+      select.dataset.lastValue = value;
+    };
+
     function updateDropdowns() {
       [document.getElementById("newItemGroup"), document.getElementById("editItemGroup")].forEach(s => {
         if(!s) return; const cur = s.value; s.innerHTML = '<option value="">(なし)</option>';
         window.appState.groups.forEach((g, idx) => { const opt = document.createElement("option"); opt.value = g.id; opt.innerText = g.name || `選択グループ ${idx+1}`; s.appendChild(opt); });
-        s.value = cur;
+        const addOpt = document.createElement("option"); addOpt.value = "__add_group__"; addOpt.textContent = "＋ 新規グループ追加…"; s.appendChild(addOpt);
+        const deleteOpt = document.createElement("option"); deleteOpt.value = "__delete_group__"; deleteOpt.textContent = "🗑 選択中のグループを削除…"; s.appendChild(deleteOpt);
+        const validCur = Array.from(s.options).some(opt => opt.value === cur) ? cur : "";
+        s.value = validCur;
+        s.dataset.lastValue = validCur;
       });
       [document.getElementById("newItemModeSelect"), document.getElementById("editItemModeSelect")].forEach(s => {
         if(!s) return;
