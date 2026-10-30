@@ -468,6 +468,7 @@
       </div>
       <div><label class="block text-xs font-bold text-slate-500 mb-1">グループ</label><select id="editItemGroup" onchange="handleGroupDropdownChange('editItemGroup')" class="w-full border rounded-lg p-2 text-sm"><option value="">(なし)</option></select></div>
       <div class="flex gap-2 pt-2">
+        <button onclick="deleteEditedItem()" class="flex-1 bg-white border border-rose-300 text-rose-600 text-sm font-bold py-2 rounded-lg">🗑 削除</button>
         <button onclick="closeEditModal()" class="flex-1 bg-slate-200 text-slate-700 text-sm font-bold py-2 rounded-lg">キャンセル</button>
         <button onclick="saveEditItem()" class="flex-1 bg-indigo-600 text-white text-sm font-bold py-2 rounded-lg">保存する</button>
       </div>
@@ -706,18 +707,17 @@
         </div>
         <div class="flex items-center gap-1 flex-shrink-0">
           <span class="px-2 py-1 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm">${item.minutes > 0 ? '+' : ''}${item.minutes}分</span>
-          <div class="flex flex-col">
-            <button onclick="moveItem('${item.id}',-1)" title="上へ" class="px-1 text-slate-500 hover:text-indigo-600 text-xs leading-4">↑</button>
-            <button onclick="moveItem('${item.id}',1)" title="下へ" class="px-1 text-slate-500 hover:text-indigo-600 text-xs leading-4">↓</button>
+          <div class="flex items-center gap-0.5 ml-1">
+            <button onclick="openEditModal('${item.id}')" title="項目を編集・削除" aria-label="項目を編集・削除" class="w-8 h-9 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600 text-sm">✏️</button>
+            <button onclick="moveItem('${item.id}',1)" title="下へ" aria-label="下へ" class="w-8 h-9 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600 text-base">↓</button>
+            <button onclick="moveItem('${item.id}',-1)" title="上へ" aria-label="上へ" class="w-8 h-9 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600 text-base">↑</button>
           </div>
-          <button onclick="openEditModal('${item.id}')" class="p-1 text-slate-400 text-xs">✏️</button>
-          <button onclick="deleteItem('${item.id}')" class="p-1 text-rose-400 text-xs">🗑</button>
         </div>`;
       return card;
     }
     function createGroupCard(group, mode) {
-      const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode))
-        .sort((a, b) => Number(!!a.completed) - Number(!!b.completed));
+      // グループ内では、チェック済み項目を下へ移動せず、登録順を維持する
+      const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode));
       if (items.length === 0) return null;
       
       const wrap = document.createElement("div"); wrap.dataset.id = group.id;
@@ -850,6 +850,15 @@
       window.appState.items = window.appState.items.filter(x => x.id !== id);
       window.appState.order = window.appState.order.filter(x => x !== id);
       window.renderUI(); window.saveState();
+    };
+    window.deleteEditedItem = () => {
+      const id = document.getElementById("editItemId").value;
+      const item = (window.appState.items || []).find(x => x.id === id);
+      if(!item) return;
+      if(!confirm(`「${item.text}」を削除しますか？`)) return;
+      window.appState.items = window.appState.items.filter(x => x.id !== id);
+      window.appState.order = window.appState.order.filter(x => x !== id);
+      closeEditModal(); window.renderUI(); window.saveState();
     };
     window.addGroup = () => {
       const id = "group_" + Date.now();
