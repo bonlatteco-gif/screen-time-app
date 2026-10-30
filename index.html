@@ -472,7 +472,15 @@
       wrap.innerHTML = `<div class="flex justify-between items-center px-1 text-slate-600 text-xs font-bold"><span>📌 どれか一つ☑</span></div>`;
       const inner = document.createElement("div"); inner.className = "space-y-2 group-inner"; inner.dataset.groupId = group.id;
       items.forEach(i => inner.appendChild(createItemCard(i)));
-      wrap.appendChild(inner); return wrap;
+      wrap.appendChild(inner);
+      const groupNameRow = document.createElement("div");
+      groupNameRow.className = "flex justify-start border-t border-slate-300/70 pt-1 mt-1";
+      const groupNameLabel = document.createElement("span");
+      groupNameLabel.className = "text-slate-600 text-xs py-1 min-w-0 break-words";
+      groupNameLabel.textContent = `(${group.name || "選択グループ"})`;
+      groupNameRow.appendChild(groupNameLabel);
+      wrap.appendChild(groupNameRow);
+      return wrap;
     }
     window.toggleCheck = (id) => {
       const i = (window.appState.items || []).find(x => x.id === id); if(!i) return;
