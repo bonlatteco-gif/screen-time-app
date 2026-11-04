@@ -97,19 +97,14 @@
       target.setHours(3,0,0,0);
 
       if (last.getTime() < target.getTime()) {
-        let earned = 0, curM = window.appState.currentMode || "weekday";
-        (window.appState.items || []).forEach(i => { if (i.completed && window.isMatch(i, curM)) earned += parseInt(i.minutes||0, 10); });
-        let total = earned + parseInt(window.appState.carryOverMinutes||0, 10);
-
-        const [sH, sM] = (window.appState.baseTime || "21:30").split(":").map(Number);
-        let used = 0;
-        if (now.getHours() > sH || (now.getHours() === sH && now.getMinutes() >= sM) || now.getHours() < 3) {
-          let st = new Date(now);
-          if (now.getHours() < 3) st.setDate(st.getDate() - 1);
-          st.setHours(sH, sM, 0, 0);
-          used = Math.floor((now.getTime() - st.getTime()) / 60000);
+        if (window.appState.pendingCarryOverMinutes !== null && window.appState.pendingCarryOverMinutes !== undefined) {
+          // 管理者が明示的に予約した分だけ、翌日の持ち越し時間にする
+          window.appState.carryOverMinutes = Math.max(0, parseInt(window.appState.pendingCarryOverMinutes || 0, 10));
+          window.appState.pendingCarryOverMinutes = null;
+        } else {
+          // 持ち越し予約がない日は、自動計算で翌日に持ち越さない
+          window.appState.carryOverMinutes = 0;
         }
-        window.appState.carryOverMinutes = Math.max(0, total - used);
         window.appState.items.forEach(i => i.completed = false);
         window.appState.lastResetTimestamp = now.getTime();
         window.saveState();
