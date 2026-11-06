@@ -323,8 +323,9 @@
           <span id="totalMinutes" class="text-5xl font-extrabold text-indigo-800">0</span>
           <span class="text-lg font-bold text-slate-700 ml-0.5">分</span>
         </div>
-        <span id="calculatedEndTime" class="text-sm font-semibold text-slate-500">（最大 21:30 まで）</span>
+        <span id="calculatedEndTime" class="text-sm font-semibold text-slate-500">（今日の就寝時間 21:30 まで）</span>
       </div>
+      <p class="text-xs font-bold text-amber-700">獲得したスクリーンタイムが0になる時刻：<span id="zeroTimeDisplay">--:--</span></p>
 
       <p id="carryOverBadge" class="text-xs text-indigo-600 font-bold hidden">※前日からの繰り越し時間（<span id="carryOverValue">0</span>分）を含みます</p>
 
@@ -364,7 +365,6 @@
           <label class="block text-xs text-slate-300 mb-1">子どもに表示する今日の就寝時間（表示のみ）</label>
           <input type="time" id="displayLimitTimeInput" onchange="updateDisplayLimitTime(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
           <p class="text-[11px] text-slate-300">現在選択中のモードに設定されます。獲得時間の計算には影響しません。</p>
-          <p class="text-xs font-bold text-amber-200">獲得したスクリーンタイムが0になる時刻：<span id="zeroTimeDisplay">--:--</span></p>
         </div>
         <div class="border-t border-slate-600 pt-3 space-y-2">
           <p class="text-[11px] text-slate-300">本日利用中の前日繰り越し：<span id="currentCarryOverValue">0</span>分</p>
@@ -602,11 +602,18 @@
       const container = document.getElementById("unifiedListContainer"); container.innerHTML = "";
       const curMode = window.appState.currentMode || "weekday";
       
-      const visibleOrder = (window.appState.order || []).slice().sort((a, b) => {
-        const ia = (window.appState.items || []).find(x => x.id === a && !x.groupId);
-        const ib = (window.appState.items || []).find(x => x.id === b && !x.groupId);
-        return Number(!!(ia && ia.completed)) - Number(!!(ib && ib.completed));
-      });
+      const isTopLevelCompleted = (id) => {
+        const item = (window.appState.items || []).find(x => x.id === id && !x.groupId);
+        if (item) return !!item.completed;
+        if (String(id).startsWith("group_")) {
+          // グループ内のどれか1つがチェック済みなら、グループ全体をチェック済み扱いにする
+          return (window.appState.items || []).some(x => x.groupId === id && x.completed && window.isMatch(x, curMode));
+        }
+        return false;
+      };
+      const visibleOrder = (window.appState.order || []).slice().sort((a, b) =>
+        Number(isTopLevelCompleted(a)) - Number(isTopLevelCompleted(b))
+      );
       visibleOrder.forEach(id => {
         if(id.startsWith("group_")) {
           const g = (window.appState.groups || []).find(gr => gr.id === id);
