@@ -364,6 +364,7 @@
           <label class="block text-xs text-slate-300 mb-1">子どもに表示する今日の就寝時間（表示のみ）</label>
           <input type="time" id="displayLimitTimeInput" onchange="updateDisplayLimitTime(this.value)" class="w-full text-slate-900 text-sm px-2.5 py-1.5 rounded-lg focus:outline-none font-bold bg-white">
           <p class="text-[11px] text-slate-300">現在選択中のモードに設定されます。獲得時間の計算には影響しません。</p>
+          <p class="text-xs font-bold text-amber-200">獲得したスクリーンタイムが0になる時刻：<span id="zeroTimeDisplay">--:--</span></p>
         </div>
         <div class="border-t border-slate-600 pt-3 space-y-2">
           <p class="text-[11px] text-slate-300">本日利用中の前日繰り越し：<span id="currentCarryOverValue">0</span>分</p>
@@ -553,6 +554,10 @@
       
       const modeLimit = (window.appState.displayLimitTimes || {})[mode] || window.appState.baseTime || "21:30";
       document.getElementById("calculatedEndTime").innerText = `（今日の就寝時間 ${modeLimit} まで）`;
+      const endM = sH * 60 + sM + rem;
+      const endH = Math.floor(endM / 60) % 24, endMin = endM % 60;
+      const zeroTime = document.getElementById("zeroTimeDisplay");
+      if (zeroTime) zeroTime.innerText = `${String(endH).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
     }
     function applyBg() {
       const body = document.getElementById("appBody"), mode = window.appState.currentMode || "weekday";
@@ -697,8 +702,8 @@
       return card;
     }
     function createGroupCard(group, mode) {
-      const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode))
-        .sort((a, b) => Number(!!a.completed) - Number(!!b.completed));
+      // グループ内はチェック済みでも並び順を変えず、登録順を維持する
+      const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode));
       if (items.length === 0) return null;
       
       const wrap = document.createElement("div"); wrap.dataset.id = group.id;
