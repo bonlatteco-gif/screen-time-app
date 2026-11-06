@@ -348,11 +348,18 @@
       const curMode = window.appState.currentMode || "weekday";
       
       // グループ外の項目だけ、チェック済みを下へ表示する。グループとグループ内の順番は維持する。
-      const visibleOrder = (window.appState.order || []).slice().sort((a, b) => {
-        const itemA = (window.appState.items || []).find(x => x.id === a && !x.groupId);
-        const itemB = (window.appState.items || []).find(x => x.id === b && !x.groupId);
-        return Number(!!(itemA && itemA.completed)) - Number(!!(itemB && itemB.completed));
-      });
+      const isTopLevelCompleted = (id) => {
+        const item = (window.appState.items || []).find(x => x.id === id && !x.groupId);
+        if (item) return !!item.completed;
+        if (String(id).startsWith("group_")) {
+          // グループ内のどれか1つがチェック済みなら、グループ全体をチェック済み扱いにする
+          return (window.appState.items || []).some(x => x.groupId === id && x.completed && window.isMatch(x, curMode));
+        }
+        return false;
+      };
+      const visibleOrder = (window.appState.order || []).slice().sort((a, b) =>
+        Number(isTopLevelCompleted(a)) - Number(isTopLevelCompleted(b))
+      );
       visibleOrder.forEach(id => {
         if(id.startsWith("group_")) {
           const g = (window.appState.groups || []).find(gr => gr.id === id);
@@ -398,6 +405,7 @@
       return card;
     }
     function createGroupCard(group, mode) {
+      // グループ内はチェック済みでも並び順を変えず、登録順を維持する
       const items = (window.appState.items || []).filter(i => i.groupId === group.id && window.isMatch(i, mode));
       if (items.length === 0) return null;
       
