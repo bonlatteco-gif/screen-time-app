@@ -614,19 +614,25 @@
       const visibleOrder = (window.appState.order || []).slice().sort((a, b) =>
         Number(isTopLevelCompleted(a)) - Number(isTopLevelCompleted(b))
       );
+      let checkedSectionShown = false;
       visibleOrder.forEach(id => {
+        let element = null;
         if(id.startsWith("group_")) {
           const g = (window.appState.groups || []).find(gr => gr.id === id);
-          if(g) {
-            const groupEl = createGroupCard(g, curMode);
-            if(groupEl) container.appendChild(groupEl);
-          }
+          if(g) element = createGroupCard(g, curMode);
         } else {
           const i = (window.appState.items || []).find(it => it.id === id && !it.groupId);
-          if(i && window.isMatch(i, curMode)) {
-            container.appendChild(createItemCard(i));
-          }
+          if(i && window.isMatch(i, curMode)) element = createItemCard(i);
         }
+        if (!element) return;
+        if (!checkedSectionShown && isTopLevelCompleted(id)) {
+          const divider = document.createElement("div");
+          divider.className = "w-full border-t border-slate-300/80 pt-2 mt-2 text-sm font-bold text-slate-500";
+          divider.innerText = "チェック済み";
+          container.appendChild(divider);
+          checkedSectionShown = true;
+        }
+        container.appendChild(element);
       });
       initSort();
     };
